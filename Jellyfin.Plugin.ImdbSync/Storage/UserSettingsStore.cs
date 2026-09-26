@@ -32,6 +32,15 @@ public class UserSettingsStore
         _directory = Path.Combine(applicationPaths.PluginConfigurationsPath, "ImdbSync", "users");
         _logger = logger;
         Directory.CreateDirectory(_directory);
+        if (!OperatingSystem.IsWindows())
+        {
+            // The files contain IMDb session cookies: readable by the Jellyfin user only.
+            File.SetUnixFileMode(_directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            foreach (var file in Directory.EnumerateFiles(_directory))
+            {
+                File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+        }
     }
 
     /// <summary>
@@ -72,6 +81,11 @@ public class UserSettingsStore
             var path = GetPath(userId);
             var tmp = path + ".tmp";
             File.WriteAllText(tmp, JsonSerializer.Serialize(settings, _jsonOptions));
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(tmp, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+
             File.Move(tmp, path, true);
             _cache[userId] = settings;
             return Clone(settings);

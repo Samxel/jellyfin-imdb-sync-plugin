@@ -1,7 +1,7 @@
 ---
 name: "IMDb Sync"
 guid: "1f3069c0-4bfe-4b07-a586-a8b6d945d3be"
-version: "1.1.0.0"
+version: "1.1.1.0"
 targetAbi: "12.1.0.0"
 framework: "net10.0"
 overview: "Sync each user's Jellyfin watch history to their own IMDb account"
@@ -14,5 +14,6 @@ owner: "samxel"
 artifacts:
 - "Jellyfin.Plugin.ImdbSync.dll"
 changelog: >
-  Activity log on the user page (what was sent to IMDb, what failed and why)
-  and live progress while a sync is running.
+  Security hardening: no shared cookie jar and no redirects for IMDb requests,
+  CSP/anti-framing headers on the user page, input limits, 0600 settings files,
+  data removed when a Jellyfin user is deleted, Sign out revokes the token.

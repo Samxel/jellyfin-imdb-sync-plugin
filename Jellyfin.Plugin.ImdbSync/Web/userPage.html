@@ -349,6 +349,7 @@
     });
 
     $('syncBtn').addEventListener('click', function () {
+        $('syncBtn').disabled = true;
         api('POST', '/ImdbSync/Me/Sync').then(function () {
             show('statusMsg', 'Sync started…', true);
             setTimeout(load, 1000);
@@ -372,8 +373,11 @@
     });
 
     $('logoutBtn').addEventListener('click', function () {
-        forgetToken();
-        showLogin();
+        // Revoke the token on the server, not just in this tab.
+        api('POST', '/Sessions/Logout').catch(function () { /* ignore */ }).then(function () {
+            forgetToken();
+            showLogin();
+        });
     });
 
     $('loginBtn').addEventListener('click', function () {
