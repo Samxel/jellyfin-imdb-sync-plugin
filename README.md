@@ -1,5 +1,14 @@
 # Jellyfin IMDb Sync
 
+> [!WARNING]
+> **Personal project, fully AI-generated. Use with caution.**
+>
+> - I built this only for my own Jellyfin server. It is not meant or maintained for anyone else.
+> - The entire code, including this README, was written by an AI (Claude Code). It has had no human code review, and the only testing was on my own server.
+> - It uses IMDb's **unofficial, undocumented** API with your personal IMDb session cookie. That may be against IMDb's terms of use, and it can stop working at any time.
+> - The IMDb cookie gives **full access to your IMDb/Amazon account**. It is stored in plain text on the Jellyfin server.
+> - Not affiliated with IMDb, Amazon or Jellyfin. No warranty, no support. Use it at your own risk.
+
 A Jellyfin plugin that marks everything a user watches in Jellyfin as **watched on their own IMDb account**.
 
 - **Right away:** when a movie/episode finishes (or is marked played), it is sent to IMDb immediately.
