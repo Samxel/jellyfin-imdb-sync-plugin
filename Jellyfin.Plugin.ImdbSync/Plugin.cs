@@ -1,19 +1,24 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using Jellyfin.Plugin.Template.Configuration;
+using Jellyfin.Plugin.ImdbSync.Configuration;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
 
-namespace Jellyfin.Plugin.Template;
+namespace Jellyfin.Plugin.ImdbSync;
 
 /// <summary>
-/// The main plugin.
+/// The IMDb Sync plugin.
 /// </summary>
 public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
+    /// <summary>
+    /// The plugin id.
+    /// </summary>
+    public const string PluginId = "1f3069c0-4bfe-4b07-a586-a8b6d945d3be";
+
     /// <summary>
     /// Initializes a new instance of the <see cref="Plugin"/> class.
     /// </summary>
@@ -26,10 +31,13 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     }
 
     /// <inheritdoc />
-    public override string Name => "Template";
+    public override string Name => "IMDb Sync";
 
     /// <inheritdoc />
-    public override Guid Id => Guid.Parse("eb5d7894-8eef-4b36-aa6f-5d124e828ce1");
+    public override Guid Id => Guid.Parse(PluginId);
+
+    /// <inheritdoc />
+    public override string Description => "Syncs each user's Jellyfin watch history to their own IMDb account.";
 
     /// <summary>
     /// Gets the current plugin instance.

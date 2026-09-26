@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>IMDb Sync</title>
+    <style>
+        :root { --bg: #101010; --card: #1c1c1c; --fg: #eee; --muted: #999; --accent: #f5c518; --ok: #4caf50; --err: #e5534b; --border: #333; }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; line-height: 1.45; }
+        main { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; }
+        h1 { font-size: 1.6em; margin: 0 0 4px; }
+        h1 .logo { background: var(--accent); color: #000; font-weight: 800; padding: 0 6px; border-radius: 4px; margin-right: 6px; }
+        h2 { font-size: 1.1em; margin: 0 0 12px; }
+        .sub { color: var(--muted); margin: 0 0 24px; }
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 18px; margin-bottom: 18px; }
+        label.row { display: flex; align-items: center; gap: 10px; margin: 8px 0; cursor: pointer; }
+        input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
+        textarea, input[type=text], input[type=password] { width: 100%; background: #0b0b0b; color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 9px; font-family: ui-monospace, monospace; font-size: .85em; }
+        textarea { min-height: 90px; resize: vertical; }
+        .field { margin: 12px 0; }
+        .field > span { display: block; font-weight: 600; margin-bottom: 4px; }
+        .hint { color: var(--muted); font-size: .85em; margin-top: 4px; }
+        button { background: #2a2a2a; color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 9px 16px; font-size: .95em; cursor: pointer; margin: 4px 6px 4px 0; }
+        button.primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 700; }
+        button.danger { color: var(--err); }
+        button:disabled { opacity: .5; cursor: default; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+        .stat { background: #0b0b0b; border-radius: 6px; padding: 10px; }
+        .stat b { display: block; font-size: 1.4em; }
+        .stat small { color: var(--muted); }
+        .msg { padding: 10px 12px; border-radius: 6px; margin: 12px 0 0; display: none; word-break: break-word; }
+        .msg.ok { display: block; background: rgba(76, 175, 80, .15); color: var(--ok); }
+        .msg.err { display: block; background: rgba(229, 83, 75, .15); color: var(--err); }
+        .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: .8em; font-weight: 700; }
+        .badge.ok { background: var(--ok); color: #000; }
+        .badge.err { background: var(--err); color: #000; }
+        .badge.off { background: #555; }
+        ol { padding-left: 20px; } ol li { margin-bottom: 6px; }
+        code { background: #0b0b0b; padding: 1px 5px; border-radius: 3px; }
+        details summary { cursor: pointer; font-weight: 600; }
+        .hidden { display: none; }
+        a { color: var(--accent); }
+    </style>
+</head>
+<body>
+<main>
+    <h1><span class="logo">IMDb</span>Sync</h1>
+    <p class="sub" id="whoami">Sync your Jellyfin watch history to your own IMDb account.</p>
+
+    <section class="card hidden" id="loginCard">
+        <h2>Sign in with your Jellyfin account</h2>
+        <div class="field"><span>Username</span><input type="text" id="loginUser" autocomplete="username"></div>
+        <div class="field"><span>Password</span><input type="password" id="loginPass" autocomplete="current-password"></div>
+        <button class="primary" id="loginBtn">Sign in</button>
+        <div class="msg" id="loginMsg"></div>
+    </section>
+
+    <div id="app" class="hidden">
+        <section class="card">
+            <h2>Status <span id="stateBadge" class="badge off">off</span></h2>
+            <div class="stats">
+                <div class="stat"><b id="stSynced">0</b><small>on IMDb</small></div>
+                <div class="stat"><b id="stPending">0</b><small>waiting</small></div>
+                <div class="stat"><b id="stFailed">0</b><small>refused by IMDb</small></div>
+                <div class="stat"><b id="stLast" style="font-size:1em">never</b><small>last sync</small></div>
+            </div>
+            <p class="hint" id="stLastTitle"></p>
+            <div class="msg" id="statusMsg"></div>
+            <div style="margin-top:12px">
+                <button class="primary" id="syncBtn">Sync now</button>
+                <button id="testBtn">Test cookie</button>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Settings</h2>
+            <label class="row"><input type="checkbox" id="enabled"> Sync my watch history to IMDb</label>
+            <label class="row"><input type="checkbox" id="syncMovies"> Movies</label>
+            <label class="row"><input type="checkbox" id="syncEpisodes"> Episodes</label>
+
+            <div class="field">
+                <span>IMDb cookie</span>
+                <textarea id="cookie" placeholder="session-id=123-4567890-1234567; at-main=Atna|...; ..." autocomplete="off" spellcheck="false"></textarea>
+                <div class="hint" id="cookieHint">Paste your whole IMDb cookie, or just the <code>at-main</code> value. Leave empty to keep the saved one.</div>
+            </div>
+            <div class="field">
+                <span>session-id <small style="font-weight:normal;color:var(--muted)">(only if not contained in the cookie above)</small></span>
+                <input type="text" id="sessionId" placeholder="123-4567890-1234567" autocomplete="off">
+            </div>
+            <button class="primary" id="saveBtn">Save</button>
+            <div class="msg" id="saveMsg"></div>
+        </section>
+
+        <section class="card">
+            <details>
+                <summary>How do I get my IMDb cookie?</summary>
+                <ol>
+                    <li>Open <a href="https://www.imdb.com/" target="_blank" rel="noopener">imdb.com</a> in a desktop browser and sign in.</li>
+                    <li>Press <b>F12</b> to open the developer tools and switch to the <b>Network</b> tab.</li>
+                    <li>Reload the page (<b>F5</b>) and click the first request (<code>www.imdb.com</code>).</li>
+                    <li>Under <b>Request Headers</b>, copy the whole value of <code>cookie</code> and paste it above.</li>
+                </ol>
+                <p class="hint">Alternative: <b>Application</b> (Chrome) / <b>Storage</b> (Firefox) tab &rarr; Cookies &rarr; <code>https://www.imdb.com</code> &rarr; copy the values of <code>at-main</code> (starts with <code>Atna|</code>) and <code>session-id</code>.</p>
+                <p class="hint">The cookie gives access to your IMDb account. It is stored only on this Jellyfin server and is never shown again after saving. If you sign out of IMDb in the browser, the cookie stops working and you need to paste a new one.</p>
+            </details>
+        </section>
+
+        <section class="card">
+            <details>
+                <summary>Advanced</summary>
+                <p class="hint">"Resend everything" forgets which titles were already sent, so the next sync pushes your whole history again (e.g. after switching IMDb accounts).</p>
+                <button id="resetBtn">Resend everything</button>
+                <button class="danger" id="deleteBtn">Delete my IMDb data</button>
+                <button id="logoutBtn" class="hidden">Sign out</button>
+                <div class="msg" id="advMsg"></div>
+            </details>
+        </section>
+    </div>
+</main>
+<script>
+(function () {
+    'use strict';
+
+    var base = location.pathname.replace(/\/ImdbSync\/Page\/?$/i, '');
+    var token = null;
+    var pollTimer = null;
+
+    function $(id) { return document.getElementById(id); }
+
+    function show(id, text, ok) {
+        var el = $(id);
+        el.textContent = text || '';
+        el.className = 'msg' + (text ? (ok ? ' ok' : ' err') : '');
+    }
+
+    function authHeader(tok) {
+        var h = 'MediaBrowser Client="IMDb Sync", Device="Browser", DeviceId="imdbsync-' + deviceId() + '", Version="1.0.0"';
+        return tok ? h + ', Token="' + tok + '"' : h;
+    }
+
+    function deviceId() {
+        var id = null;
+        try { id = localStorage.getItem('imdbsync_device'); } catch (e) { /* ignore */ }
+        if (!id) {
+            id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+            try { localStorage.setItem('imdbsync_device', id); } catch (e) { /* ignore */ }
+        }
+        return id;
+    }
+
+    function api(method, path, body) {
+        var opts = { method: method, headers: { 'Authorization': authHeader(token) } };
+        if (body !== undefined) {
+            opts.headers['Content-Type'] = 'application/json';
+            opts.body = JSON.stringify(body);
+        }
+        return fetch(base + path, opts).then(function (r) {
+            return r.text().then(function (t) {
+                var data = t;
+                try { data = t ? JSON.parse(t) : null; } catch (e) { /* plain text */ }
+                if (r.status === 401) {
+                    forgetToken();
+                    showLogin();
+                }
+                if (!r.ok) {
+                    var msg = typeof data === 'string' ? data : (data && (data.title || data.detail)) || ('HTTP ' + r.status);
+                    throw new Error(msg);
+                }
+                return data;
+            });
+        });
+    }
+
+    function forgetToken() {
+        token = null;
+        try { sessionStorage.removeItem('imdbsync_token'); } catch (e) { /* ignore */ }
+    }
+
+    function findToken(serverId) {
+        try {
+            var creds = JSON.parse(localStorage.getItem('jellyfin_credentials') || '{}');
+            var servers = creds.Servers || [];
+            for (var i = 0; i < servers.length; i++) {
+                if (servers[i].Id === serverId && servers[i].AccessToken) {
+                    return servers[i].AccessToken;
+                }
+            }
+        } catch (e) { /* ignore */ }
+        try { return sessionStorage.getItem('imdbsync_token'); } catch (e) { return null; }
+    }
+
+    function showLogin() {
+        $('app').classList.add('hidden');
+        $('loginCard').classList.remove('hidden');
+    }
+
+    function fmtDate(s) {
+        if (!s) { return 'never'; }
+        var d = new Date(s.endsWith('Z') ? s : s + 'Z');
+        return d.toLocaleString();
+    }
+
+    function render(st) {
+        $('loginCard').classList.add('hidden');
+        $('app').classList.remove('hidden');
+        $('whoami').textContent = 'Signed in as ' + st.UserName + '. Everything you watch in Jellyfin is marked as watched on your IMDb account.';
+        $('enabled').checked = st.Enabled;
+        $('syncMovies').checked = st.SyncMovies;
+        $('syncEpisodes').checked = st.SyncEpisodes;
+        $('stSynced').textContent = st.SyncedCount;
+        $('stPending').textContent = st.PendingCount;
+        $('stFailed').textContent = st.FailedCount;
+        $('stLast').textContent = st.IsSyncing ? 'running…' : fmtDate(st.LastSyncUtc);
+        $('stLastTitle').textContent = st.LastSyncedTitle ? 'Last synced: ' + st.LastSyncedTitle + ' (' + fmtDate(st.LastSuccessUtc) + ')' : '';
+        $('cookieHint').innerHTML = st.HasCookie
+            ? 'Saved cookie: <code>' + escapeHtml(st.MaskedToken) + '</code>' + (st.HasSessionId ? ' with session-id' : ' <b>without session-id</b>') + '. Paste a new one to replace it.'
+            : 'Paste your whole IMDb cookie, or just the <code>at-main</code> value.';
+
+        var badge = $('stateBadge');
+        if (st.CookieExpired) { badge.className = 'badge err'; badge.textContent = 'cookie expired'; }
+        else if (!st.HasCookie) { badge.className = 'badge off'; badge.textContent = 'no cookie'; }
+        else if (!st.Enabled) { badge.className = 'badge off'; badge.textContent = 'disabled'; }
+        else { badge.className = 'badge ok'; badge.textContent = 'active'; }
+
+        if (st.CookieExpired) {
+            show('statusMsg', 'IMDb rejected your cookie. Sign in to imdb.com again and paste a fresh cookie below.' + (st.LastError ? ' (' + st.LastError + ')' : ''), false);
+        } else if (st.LastError) {
+            show('statusMsg', 'Last error: ' + st.LastError, false);
+        } else {
+            show('statusMsg', '');
+        }
+
+        $('syncBtn').disabled = st.IsSyncing || !st.HasCookie || !st.Enabled || st.CookieExpired;
+        $('testBtn').disabled = !st.HasCookie;
+
+        clearTimeout(pollTimer);
+        if (st.IsSyncing) {
+            pollTimer = setTimeout(load, 3000);
+        }
+    }
+
+    function escapeHtml(s) {
+        return String(s || '').replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+
+    function load() {
+        return api('GET', '/ImdbSync/Me').then(render).catch(function (e) {
+            if (token) { show('statusMsg', e.message, false); }
+        });
+    }
+
+    $('saveBtn').addEventListener('click', function () {
+        var body = {
+            Enabled: $('enabled').checked,
+            SyncMovies: $('syncMovies').checked,
+            SyncEpisodes: $('syncEpisodes').checked
+        };
+        var cookie = $('cookie').value.trim();
+        if (cookie) { body.Cookie = cookie; }
+        var sid = $('sessionId').value.trim();
+        if (sid) { body.SessionId = sid; }
+        api('POST', '/ImdbSync/Me', body).then(function (st) {
+            $('cookie').value = '';
+            $('sessionId').value = '';
+            render(st);
+            show('saveMsg', 'Saved.' + (cookie ? ' Use "Test cookie" to check that IMDb accepts it.' : ''), true);
+        }).catch(function (e) { show('saveMsg', e.message, false); });
+    });
+
+    $('testBtn').addEventListener('click', function () {
+        show('statusMsg', 'Asking IMDb…', true);
+        api('POST', '/ImdbSync/Me/Test').then(function (m) {
+            return load().then(function () { show('statusMsg', m, true); });
+        }).catch(function (e) { load().then(function () { show('statusMsg', e.message, false); }); });
+    });
+
+    $('syncBtn').addEventListener('click', function () {
+        api('POST', '/ImdbSync/Me/Sync').then(function () {
+            show('statusMsg', 'Sync started…', true);
+            setTimeout(load, 1000);
+        }).catch(function (e) { show('statusMsg', e.message, false); });
+    });
+
+    $('resetBtn').addEventListener('click', function () {
+        if (!confirm('Send your whole watch history to IMDb again on the next sync?')) { return; }
+        api('POST', '/ImdbSync/Me/Reset').then(function (st) {
+            render(st);
+            show('advMsg', 'Done. Press "Sync now" to resend.', true);
+        }).catch(function (e) { show('advMsg', e.message, false); });
+    });
+
+    $('deleteBtn').addEventListener('click', function () {
+        if (!confirm('Delete your IMDb cookie and sync history from this server?')) { return; }
+        api('DELETE', '/ImdbSync/Me').then(function () {
+            show('advMsg', 'Deleted.', true);
+            return load();
+        }).catch(function (e) { show('advMsg', e.message, false); });
+    });
+
+    $('logoutBtn').addEventListener('click', function () {
+        forgetToken();
+        showLogin();
+    });
+
+    $('loginBtn').addEventListener('click', function () {
+        fetch(base + '/Users/AuthenticateByName', {
+            method: 'POST',
+            headers: { 'Authorization': authHeader(null), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ Username: $('loginUser').value, Pw: $('loginPass').value })
+        }).then(function (r) {
+            if (!r.ok) { throw new Error(r.status === 401 ? 'Wrong username or password.' : 'HTTP ' + r.status); }
+            return r.json();
+        }).then(function (res) {
+            token = res.AccessToken;
+            try { sessionStorage.setItem('imdbsync_token', token); } catch (e) { /* ignore */ }
+            $('logoutBtn').classList.remove('hidden');
+            show('loginMsg', '');
+            return load();
+        }).catch(function (e) { show('loginMsg', e.message, false); });
+    });
+
+    $('loginPass').addEventListener('keydown', function (e) { if (e.key === 'Enter') { $('loginBtn').click(); } });
+
+    fetch(base + '/System/Info/Public').then(function (r) { return r.json(); }).then(function (info) {
+        token = findToken(info.Id);
+        if (!token) { showLogin(); return; }
+        try { if (sessionStorage.getItem('imdbsync_token') === token) { $('logoutBtn').classList.remove('hidden'); } } catch (e) { /* ignore */ }
+        load();
+    }).catch(showLogin);
+})();
+</script>
+</body>
+</html>
