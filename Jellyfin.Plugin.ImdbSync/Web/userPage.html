@@ -81,8 +81,8 @@
 
             <div class="field">
                 <span>IMDb cookie</span>
-                <textarea id="cookie" placeholder="session-id=123-4567890-1234567; at-main=Atna|...; ..." autocomplete="off" spellcheck="false"></textarea>
-                <div class="hint" id="cookieHint">Paste your whole IMDb cookie, or just the <code>at-main</code> value. Leave empty to keep the saved one.</div>
+                <textarea id="cookie" placeholder="session-id=123-4567890-1234567; at-main=Atza|...; ..." autocomplete="off" spellcheck="false"></textarea>
+                <div class="hint" id="cookieHint">Paste your whole IMDb cookie (recommended), or just the <code>at-main</code> value. Leave empty to keep the saved one.</div>
             </div>
             <div class="field">
                 <span>session-id <small style="font-weight:normal;color:var(--muted)">(only if not contained in the cookie above)</small></span>
@@ -101,7 +101,7 @@
                     <li>Reload the page (<b>F5</b>) and click the first request (<code>www.imdb.com</code>).</li>
                     <li>Under <b>Request Headers</b>, copy the whole value of <code>cookie</code> and paste it above.</li>
                 </ol>
-                <p class="hint">Alternative: <b>Application</b> (Chrome) / <b>Storage</b> (Firefox) tab &rarr; Cookies &rarr; <code>https://www.imdb.com</code> &rarr; copy the values of <code>at-main</code> (starts with <code>Atna|</code>) and <code>session-id</code>.</p>
+                <p class="hint">Alternative: <b>Application</b> (Chrome) / <b>Storage</b> (Firefox) tab &rarr; Cookies &rarr; <code>https://www.imdb.com</code> &rarr; copy the values of <code>at-main</code> (starts with <code>Atza|</code> or <code>Atna|</code>) and <code>session-id</code>.</p>
                 <p class="hint">The cookie gives access to your IMDb account. It is stored only on this Jellyfin server and is never shown again after saving. If you sign out of IMDb in the browser, the cookie stops working and you need to paste a new one.</p>
             </details>
         </section>

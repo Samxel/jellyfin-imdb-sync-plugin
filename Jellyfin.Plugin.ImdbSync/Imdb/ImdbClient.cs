@@ -24,8 +24,6 @@ public class ImdbClient
         + "addWatchedTitle(titleId: $titleId) { success message { __typename ...LocalizedStringFragment } } } "
         + "fragment LocalizedStringFragment on LocalizedString { language value }";
 
-    private const string SeenHash = "f71ce6ce7e20e914cbc00e744a77cb3d14611c82477834589106a5d57a886522";
-
     private const string WatchlistCountQuery =
         "query UserPredefinedListQuery { predefinedList(classType: WATCH_LIST) { items(first: 1) { "
         + "edges { node { item { __typename ... on Title { id } } } } pageInfo { hasNextPage } } } }";
@@ -56,11 +54,7 @@ public class ImdbClient
         {
             ["operationName"] = "UserAddSeenTitleMutation",
             ["variables"] = new JsonObject { ["titleId"] = imdbId },
-            ["query"] = SeenQuery,
-            ["extensions"] = new JsonObject
-            {
-                ["persistedQuery"] = new JsonObject { ["version"] = 1, ["sha256Hash"] = SeenHash }
-            }
+            ["query"] = SeenQuery
         };
 
         var data = await PostAsync(credentials, payload, cancellationToken).ConfigureAwait(false);
@@ -93,22 +87,15 @@ public class ImdbClient
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, _graphQlUri);
         request.Content = JsonContent.Create(payload);
-        request.Headers.TryAddWithoutValidation("x-imdb-map-authentication-token", credentials.Token);
-        if (!string.IsNullOrEmpty(credentials.SessionId))
-        {
-            request.Headers.TryAddWithoutValidation("x-amzn-sessionid", credentials.SessionId);
-        }
-
-        request.Headers.TryAddWithoutValidation("x-imdb-client-name", "imdb-app-android");
-        request.Headers.TryAddWithoutValidation("x-imdb-client-version", "9.3.4.109340300");
-        request.Headers.TryAddWithoutValidation("x-imdb-user-language", "en-US");
+        // Browser cookies (at-main=Atza|...) are only accepted when sent the way the IMDb website does it.
+        request.Headers.TryAddWithoutValidation("cookie", credentials.CookieHeader);
+        request.Headers.TryAddWithoutValidation("origin", "https://www.imdb.com");
+        request.Headers.TryAddWithoutValidation("referer", "https://www.imdb.com/");
+        request.Headers.TryAddWithoutValidation("x-imdb-client-name", "imdb-web-next-localized");
         request.Headers.TryAddWithoutValidation("x-imdb-user-country", "US");
-        request.Headers.TryAddWithoutValidation("accept", "application/json");
-        request.Headers.TryAddWithoutValidation("user-agent", "IMDb/9.3.4 (google|sdk_gphone64_x86_64; Android 34; google)");
-        if (!string.IsNullOrEmpty(credentials.WafToken))
-        {
-            request.Headers.TryAddWithoutValidation("cookie", "aws-waf-token=" + credentials.WafToken);
-        }
+        request.Headers.TryAddWithoutValidation("x-imdb-user-language", "en-US");
+        request.Headers.TryAddWithoutValidation("accept", "application/graphql+json, application/json");
+        request.Headers.TryAddWithoutValidation("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36");
 
         using var client = _httpClientFactory.CreateClient(HttpClientName);
         using var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);

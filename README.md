@@ -13,18 +13,18 @@ Requires Jellyfin **12.1**.
 Dashboard → Plugins → **Repositories** → add
 
 ```
-https://raw.githubusercontent.com/Samxel/JellyIMDb/master/manifest.json
+https://raw.githubusercontent.com/Samxel/jellyfin-imdb-sync-plugin/master/manifest.json
 ```
 
 then install **IMDb Sync** from the catalog and restart Jellyfin.
 
-New versions are released by pushing a tag (`git tag v1.0.1 && git push origin v1.0.1`); the release workflow builds the zip, creates the GitHub release and adds it to `manifest.json`. Bump `version`/`changelog` in `build.yaml` alongside.
+New versions are released by pushing a tag (`git tag v1.0.1 && git push origin v1.0.1`) or by running the *Release Plugin* workflow manually with a version; the workflow builds the zip, creates the GitHub release and adds it to `manifest.json`. Bump `version`/`changelog` in `build.yaml` alongside.
 
 ## Setup for users
 
 1. Open `https://<your-jellyfin>/ImdbSync/Page` (the page uses your existing Jellyfin web login, or asks you to sign in).
 2. Sign in on [imdb.com](https://www.imdb.com), open the browser developer tools (F12) → **Network**, reload, click the `www.imdb.com` request and copy the value of the `cookie` request header.
-   (Only `at-main` and `session-id` are needed; you can also paste just the `at-main` value and the session id separately.)
+   Paste the whole cookie; it is sent to IMDb the same way your browser does. (`at-main` starts with `Atza|` or `Atna|`.)
 3. Paste it, tick **Sync my watch history to IMDb**, **Save**, then **Test cookie**.
 4. Press **Sync now** to push your existing history once.
 
@@ -41,7 +41,7 @@ Dashboard → Plugins → **IMDb Sync**:
 ## How it works
 
 - Only items with an IMDb id (`tt…`) in their metadata are synced. Episodes need their own episode IMDb id.
-- The IMDb GraphQL API (`addWatchedTitle`) is called with the user's `at-main` token, the same way the IMDb Android app does.
+- The IMDb GraphQL API (`addWatchedTitle`) is called with the user's IMDb cookie, the same way the IMDb website does.
 - Per-user data is stored in `<config>/plugins/configurations/ImdbSync/users/<userId>.json`. The cookie is never returned by any API endpoint (only a masked version) and is not part of the plugin XML configuration.
 - Titles already sent are remembered and not sent again. Titles IMDb refuses are not retried automatically; **Resend everything** on the user page resets both lists.
 

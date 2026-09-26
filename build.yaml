@@ -1,7 +1,7 @@
 ---
 name: "IMDb Sync"
 guid: "1f3069c0-4bfe-4b07-a586-a8b6d945d3be"
-version: "1.0.0.0"
+version: "1.0.1.0"
 targetAbi: "12.1.0.0"
 framework: "net10.0"
 overview: "Sync each user's Jellyfin watch history to their own IMDb account"
@@ -14,4 +14,5 @@ owner: "samxel"
 artifacts:
 - "Jellyfin.Plugin.ImdbSync.dll"
 changelog: >
-  Initial release.
+  Support browser cookies (at-main=Atza|...): the cookie is now sent the
+  way the IMDb website does it instead of the Android app token header.

@@ -110,7 +110,7 @@ public class ImdbSyncController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(update.Cookie) && ImdbCredentials.Parse(update.Cookie, update.SessionId) is null)
         {
-            return BadRequest("No IMDb token found. Paste the whole cookie (it must contain at-main=Atna|...) or just the at-main value.");
+            return BadRequest("No IMDb token found. Paste the whole cookie (it must contain at-main=Atza|... or at-main=Atna|...) or just the at-main value.");
         }
 
         _store.Update(userId.Value, s =>
