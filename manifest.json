@@ -3,6 +3,14 @@
     "guid": "1f3069c0-4bfe-4b07-a586-a8b6d945d3be",
     "versions": [
       {
+        "version": "1.1.1.0",
+        "changelog": "Security hardening: no shared cookie jar and no redirects for IMDb requests, CSP/anti-framing headers on the user page, input limits, 0600 settings files, data removed when a Jellyfin user is deleted, Sign out revokes the token.",
+        "targetAbi": "12.1.0.0",
+        "sourceUrl": "https://github.com/Samxel/jellyfin-imdb-sync-plugin/releases/download/v1.1.1/imdb-sync_1.1.1.0.zip",
+        "checksum": "922b0200df6d31b7a41996382e950fe1",
+        "timestamp": "2026-09-26T12:39:09Z"
+      },
+      {
         "version": "1.1.0.0",
         "changelog": "Activity log on the user page (what was sent to IMDb, what failed and why) and live progress while a sync is running.",
         "targetAbi": "12.1.0.0",
