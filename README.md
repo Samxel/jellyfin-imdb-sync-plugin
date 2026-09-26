@@ -8,6 +8,18 @@ A Jellyfin plugin that marks everything a user watches in Jellyfin as **watched 
 
 Requires Jellyfin **12.1**.
 
+## Install
+
+Dashboard → Plugins → **Repositories** → add
+
+```
+https://raw.githubusercontent.com/Samxel/JellyIMDb/master/manifest.json
+```
+
+then install **IMDb Sync** from the catalog and restart Jellyfin.
+
+New versions are released by pushing a tag (`git tag v1.0.1 && git push origin v1.0.1`); the release workflow builds the zip, creates the GitHub release and adds it to `manifest.json`. Bump `version`/`changelog` in `build.yaml` alongside.
+
 ## Setup for users
 
 1. Open `https://<your-jellyfin>/ImdbSync/Page` (the page uses your existing Jellyfin web login, or asks you to sign in).
