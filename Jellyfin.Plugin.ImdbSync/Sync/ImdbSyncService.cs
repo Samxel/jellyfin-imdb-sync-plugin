@@ -32,6 +32,7 @@ public class ImdbSyncService
     private readonly IUserManager _userManager;
     private readonly ILogger<ImdbSyncService> _logger;
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _userLocks = new();
+    private readonly ConcurrentDictionary<Guid, SyncProgress> _progress = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ImdbSyncService"/> class.
@@ -55,6 +56,14 @@ public class ImdbSyncService
         _logger = logger;
     }
 
+    private enum PushOutcome
+    {
+        Synced,
+        Refused,
+        Error,
+        CookieRejected
+    }
+
     private static int RequestDelayMs => Math.Max(0, Plugin.Instance?.Configuration.RequestDelayMs ?? 500);
 
     /// <summary>
@@ -67,14 +76,7 @@ public class ImdbSyncService
     {
         ArgumentNullException.ThrowIfNull(item);
         ArgumentNullException.ThrowIfNull(settings);
-        var wanted = item switch
-        {
-            Movie => settings.SyncMovies,
-            Episode => settings.SyncEpisodes,
-            _ => false
-        };
-
-        if (!wanted)
+        if (!IsWantedType(item, settings))
         {
             return null;
         }
@@ -82,6 +84,27 @@ public class ImdbSyncService
         var id = item.GetProviderId(MetadataProvider.Imdb);
         return !string.IsNullOrWhiteSpace(id) && id.StartsWith("tt", StringComparison.OrdinalIgnoreCase) ? id.Trim() : null;
     }
+
+    /// <summary>
+    /// Gets the progress of a running sync of the user.
+    /// </summary>
+    /// <param name="userId">The user id.</param>
+    /// <returns>The progress, or <c>null</c> if no bulk sync is running.</returns>
+    public SyncProgress? GetProgress(Guid userId) => _progress.TryGetValue(userId, out var p) ? p : null;
+
+    /// <summary>
+    /// Gets a value indicating whether a sync for the user is running.
+    /// </summary>
+    /// <param name="userId">The user id.</param>
+    /// <returns><c>true</c> if running.</returns>
+    public bool IsSyncing(Guid userId) => _userLocks.TryGetValue(userId, out var l) && l.CurrentCount == 0;
+
+    /// <summary>
+    /// Gets the number of played items that still have to be pushed.
+    /// </summary>
+    /// <param name="userId">The user id.</param>
+    /// <returns>The count.</returns>
+    public int CountPending(Guid userId) => GetPendingItems(userId, _store.Get(userId)).Count;
 
     /// <summary>
     /// Pushes a single item that was just marked played.
@@ -92,14 +115,28 @@ public class ImdbSyncService
     /// <returns>A task.</returns>
     public async Task PushItemAsync(Guid userId, BaseItem item, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(item);
         var settings = _store.Get(userId);
-        if (!IsActive(settings, out var credentials))
+        if (!IsActive(settings, out var credentials) || !IsWantedType(item, settings))
         {
             return;
         }
 
         var imdbId = GetSyncableImdbId(item, settings);
-        if (imdbId is null || settings.SyncedIds.Contains(imdbId))
+        if (imdbId is null)
+        {
+            var skipped = new SyncLogEntry
+            {
+                Status = SyncLogStatus.Info,
+                Source = SyncSource.Realtime,
+                Title = DisplayName(item),
+                Message = "Skipped: no IMDb id in the Jellyfin metadata."
+            };
+            _store.Update(userId, s => s.AddLog([skipped]));
+            return;
+        }
+
+        if (settings.SyncedIds.Contains(imdbId))
         {
             return;
         }
@@ -115,7 +152,13 @@ public class ImdbSyncService
                 return;
             }
 
-            await PushAsync(userId, credentials, imdbId, item.Name, cancellationToken).ConfigureAwait(false);
+            var batch = new Batch(SyncSource.Realtime);
+            if (await PushOneAsync(userId, credentials, imdbId, DisplayName(item), batch, cancellationToken).ConfigureAwait(false) == PushOutcome.Synced)
+            {
+                batch.Error = string.Empty;
+            }
+
+            Flush(userId, batch);
             if (RequestDelayMs > 0)
             {
                 await Task.Delay(RequestDelayMs, cancellationToken).ConfigureAwait(false);
@@ -144,7 +187,7 @@ public class ImdbSyncService
             var userProgress = new Progress<double>(p => progress.Report(((offset + (p / 100)) / userIds.Count) * 100));
             try
             {
-                var result = await SyncUserAsync(userIds[i], userProgress, cancellationToken).ConfigureAwait(false);
+                var result = await SyncUserAsync(userIds[i], SyncSource.Daily, userProgress, cancellationToken).ConfigureAwait(false);
                 _logger.LogInformation("IMDb sync for user {UserId}: {Message}", userIds[i], result.Message);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -160,10 +203,11 @@ public class ImdbSyncService
     /// Pushes every played movie/episode of a user that is not yet on IMDb.
     /// </summary>
     /// <param name="userId">The user id.</param>
+    /// <param name="source">What triggered the sync, see <see cref="SyncSource"/>.</param>
     /// <param name="progress">The progress, may be <c>null</c>.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The result.</returns>
-    public async Task<SyncResult> SyncUserAsync(Guid userId, IProgress<double>? progress, CancellationToken cancellationToken)
+    public async Task<SyncResult> SyncUserAsync(Guid userId, string source, IProgress<double>? progress, CancellationToken cancellationToken)
     {
         var settings = _store.Get(userId);
         if (!IsActive(settings, out var credentials))
@@ -173,64 +217,63 @@ public class ImdbSyncService
 
         var userLock = _userLocks.GetOrAdd(userId, _ => new SemaphoreSlim(1, 1));
         await userLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var batch = new Batch(source);
         try
         {
             var pending = GetPendingItems(userId, _store.Get(userId));
-            int synced = 0, failed = 0, consecutiveErrors = 0;
-            var newlySynced = new List<string>();
-            var newlyFailed = new List<string>();
-            string? lastTitle = null;
-            string? error = null;
+            var state = new SyncProgress { Total = pending.Count, Source = source };
+            _progress[userId] = state;
+            if (pending.Count > 0 || source != SyncSource.Daily)
+            {
+                batch.Log.Add(new SyncLogEntry { Source = source, Title = $"Sync started: {pending.Count} title(s) to send." });
+            }
 
+            int synced = 0, failed = 0, consecutiveErrors = 0;
+            string? error = null;
+            var cookieRejected = false;
             for (var i = 0; i < pending.Count; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var (imdbId, name) = pending[i];
-                try
+                state.Current = name;
+                var outcome = await PushOneAsync(userId, credentials, imdbId, name, batch, cancellationToken).ConfigureAwait(false);
+                state.Done = i + 1;
+                switch (outcome)
                 {
-                    if (await _imdbClient.MarkWatchedAsync(credentials, imdbId, cancellationToken).ConfigureAwait(false))
-                    {
+                    case PushOutcome.Synced:
                         synced++;
-                        newlySynced.Add(imdbId);
-                        lastTitle = name;
-                        _logger.LogDebug("Marked {Name} ({ImdbId}) as watched on IMDb for {UserId}", name, imdbId, userId);
-                    }
-                    else
-                    {
+                        consecutiveErrors = 0;
+                        break;
+                    case PushOutcome.Refused:
                         failed++;
-                        newlyFailed.Add(imdbId);
-                        _logger.LogWarning("IMDb refused to mark {Name} ({ImdbId}) as watched", name, imdbId);
-                    }
-
-                    consecutiveErrors = 0;
+                        consecutiveErrors = 0;
+                        break;
+                    case PushOutcome.CookieRejected:
+                        cookieRejected = true;
+                        error = batch.Error;
+                        break;
+                    default:
+                        failed++;
+                        error = batch.Error;
+                        consecutiveErrors++;
+                        break;
                 }
-                catch (ImdbAuthException ex)
+
+                if (cookieRejected)
                 {
-                    error = ex.Message;
-                    _store.Update(userId, s => s.CookieExpired = true);
-                    _logger.LogWarning("IMDb cookie of user {UserId} was rejected: {Message}", userId, ex.Message);
                     break;
                 }
-                catch (HttpRequestException ex)
-                {
-                    failed++;
-                    error = ex.Message;
-                    _logger.LogWarning("IMDb request for {Name} ({ImdbId}) failed: {Message}", name, imdbId, ex.Message);
-                    if (ex.StatusCode is null && ex.Message.Contains("GraphQL", StringComparison.Ordinal))
-                    {
-                        newlyFailed.Add(imdbId);
-                    }
 
-                    if (++consecutiveErrors >= MaxConsecutiveErrors)
-                    {
-                        error = $"Stopped after {MaxConsecutiveErrors} errors in a row: {ex.Message}";
-                        break;
-                    }
+                if (consecutiveErrors >= MaxConsecutiveErrors)
+                {
+                    error = $"Stopped after {MaxConsecutiveErrors} errors in a row: {error}";
+                    batch.Log.Add(new SyncLogEntry { Status = SyncLogStatus.Error, Source = source, Title = "Sync stopped.", Message = error });
+                    break;
                 }
 
-                if ((newlySynced.Count + newlyFailed.Count) >= FlushEvery)
+                if (batch.PendingWrites >= FlushEvery)
                 {
-                    Flush(userId, newlySynced, newlyFailed, lastTitle, null);
+                    Flush(userId, batch);
                 }
 
                 progress?.Report((i + 1) * 100.0 / pending.Count);
@@ -240,34 +283,42 @@ public class ImdbSyncService
                 }
             }
 
-            Flush(userId, newlySynced, newlyFailed, lastTitle, error ?? string.Empty);
-            _store.Update(userId, s => s.LastSyncUtc = DateTime.UtcNow);
-            progress?.Report(100);
-
             var remaining = pending.Count - synced - failed;
             var message = $"{synced} marked as watched, {failed} failed, {remaining} pending"
                 + (error is null ? "." : $". Last error: {error}");
+            if (pending.Count > 0 || source != SyncSource.Daily)
+            {
+                batch.Log.Add(new SyncLogEntry { Source = source, Title = "Sync finished: " + message });
+            }
+
+            batch.Error = error ?? string.Empty;
+            Flush(userId, batch);
+            _store.Update(userId, s => s.LastSyncUtc = DateTime.UtcNow);
+            progress?.Report(100);
             return new SyncResult(synced, failed, remaining, message);
+        }
+        catch (OperationCanceledException)
+        {
+            batch.Log.Add(new SyncLogEntry { Source = source, Title = "Sync cancelled (server shutting down?). It continues with the next sync." });
+            Flush(userId, batch);
+            throw;
         }
         finally
         {
+            _progress.TryRemove(userId, out _);
             userLock.Release();
         }
     }
 
-    /// <summary>
-    /// Gets a value indicating whether a sync for the user is running.
-    /// </summary>
-    /// <param name="userId">The user id.</param>
-    /// <returns><c>true</c> if running.</returns>
-    public bool IsSyncing(Guid userId) => _userLocks.TryGetValue(userId, out var l) && l.CurrentCount == 0;
+    private static bool IsWantedType(BaseItem item, ImdbUserSettings settings) => item switch
+    {
+        Movie => settings.SyncMovies,
+        Episode => settings.SyncEpisodes,
+        _ => false
+    };
 
-    /// <summary>
-    /// Gets the number of played items that still have to be pushed.
-    /// </summary>
-    /// <param name="userId">The user id.</param>
-    /// <returns>The count.</returns>
-    public int CountPending(Guid userId) => GetPendingItems(userId, _store.Get(userId)).Count;
+    private static string DisplayName(BaseItem item)
+        => item is Episode ep ? $"{ep.SeriesName} {ep.ParentIndexNumber}x{ep.IndexNumber} {ep.Name}" : item.Name;
 
     private static bool IsActive(ImdbUserSettings settings, [NotNullWhen(true)] out ImdbCredentials? credentials)
     {
@@ -317,63 +368,90 @@ public class ImdbSyncService
                 && !settings.FailedIds.Contains(imdbId)
                 && seen.Add(imdbId))
             {
-                result.Add((imdbId, item is Episode ep ? $"{ep.SeriesName} {ep.ParentIndexNumber}x{ep.IndexNumber} {ep.Name}" : item.Name));
+                result.Add((imdbId, DisplayName(item)));
             }
         }
 
         return result;
     }
 
-    private async Task PushAsync(Guid userId, ImdbCredentials credentials, string imdbId, string name, CancellationToken cancellationToken)
+    private async Task<PushOutcome> PushOneAsync(Guid userId, ImdbCredentials credentials, string imdbId, string name, Batch batch, CancellationToken cancellationToken)
     {
+        var entry = new SyncLogEntry { Source = batch.Source, ImdbId = imdbId, Title = name };
+        batch.Log.Add(entry);
         try
         {
-            var success = await _imdbClient.MarkWatchedAsync(credentials, imdbId, cancellationToken).ConfigureAwait(false);
-            if (success)
+            if (await _imdbClient.MarkWatchedAsync(credentials, imdbId, cancellationToken).ConfigureAwait(false))
             {
-                Flush(userId, [imdbId], [], name, string.Empty);
-                _logger.LogInformation("Marked {Name} ({ImdbId}) as watched on IMDb for user {UserId}", name, imdbId, userId);
+                entry.Status = SyncLogStatus.Synced;
+                batch.Synced.Add(imdbId);
+                batch.LastTitle = name;
+                _logger.LogDebug("Marked {Name} ({ImdbId}) as watched on IMDb for {UserId}", name, imdbId, userId);
+                return PushOutcome.Synced;
             }
-            else
-            {
-                Flush(userId, [], [imdbId], null, $"IMDb refused to mark {name} ({imdbId}) as watched.");
-                _logger.LogWarning("IMDb refused to mark {Name} ({ImdbId}) as watched", name, imdbId);
-            }
+
+            entry.Status = SyncLogStatus.Refused;
+            entry.Message = "IMDb did not confirm the update. Not retried automatically.";
+            batch.Failed.Add(imdbId);
+            _logger.LogWarning("IMDb refused to mark {Name} ({ImdbId}) as watched", name, imdbId);
+            return PushOutcome.Refused;
         }
         catch (ImdbAuthException ex)
         {
-            _store.Update(userId, s =>
-            {
-                s.CookieExpired = true;
-                s.LastError = ex.Message;
-            });
+            entry.Status = SyncLogStatus.Cookie;
+            entry.Message = ex.Message;
+            batch.Error = ex.Message;
+            batch.CookieRejected = true;
             _logger.LogWarning("IMDb cookie of user {UserId} was rejected: {Message}", userId, ex.Message);
+            return PushOutcome.CookieRejected;
         }
         catch (HttpRequestException ex)
         {
-            // Not recorded as failed: the daily sync retries it.
-            _store.Update(userId, s => s.LastError = ex.Message);
+            entry.Message = ex.Message;
+            batch.Error = ex.Message;
             _logger.LogWarning("IMDb request for {Name} ({ImdbId}) failed: {Message}", name, imdbId, ex.Message);
+
+            // A GraphQL error (the request reached IMDb) will not fix itself; network errors are retried next time.
+            if (ex.StatusCode is null && ex.Message.Contains("GraphQL", StringComparison.Ordinal))
+            {
+                entry.Status = SyncLogStatus.Refused;
+                batch.Failed.Add(imdbId);
+                return PushOutcome.Refused;
+            }
+
+            entry.Status = SyncLogStatus.Error;
+            entry.Message += " Retried on the next sync.";
+            return PushOutcome.Error;
         }
     }
 
-    private void Flush(Guid userId, List<string> synced, List<string> failed, string? lastTitle, string? error)
+    private void Flush(Guid userId, Batch batch)
     {
-        if (synced.Count == 0 && failed.Count == 0 && error is null)
+        if (batch.PendingWrites == 0 && batch.Error is null && !batch.CookieRejected)
         {
             return;
         }
 
-        var syncedCopy = synced.ToList();
-        var failedCopy = failed.ToList();
+        var synced = batch.Synced.ToList();
+        var failed = batch.Failed.ToList();
+        var log = batch.Log.ToList();
+        var lastTitle = batch.LastTitle;
+        var error = batch.Error;
+        var cookieRejected = batch.CookieRejected;
         _store.Update(userId, s =>
         {
-            s.SyncedIds.UnionWith(syncedCopy);
-            s.FailedIds.UnionWith(failedCopy);
-            if (syncedCopy.Count > 0)
+            s.SyncedIds.UnionWith(synced);
+            s.FailedIds.UnionWith(failed);
+            s.AddLog(log);
+            if (synced.Count > 0)
             {
                 s.LastSuccessUtc = DateTime.UtcNow;
                 s.LastSyncedTitle = lastTitle ?? s.LastSyncedTitle;
+            }
+
+            if (cookieRejected)
+            {
+                s.CookieExpired = true;
             }
 
             if (error is not null)
@@ -381,7 +459,35 @@ public class ImdbSyncService
                 s.LastError = error.Length == 0 ? null : error;
             }
         });
-        synced.Clear();
-        failed.Clear();
+
+        batch.Synced.Clear();
+        batch.Failed.Clear();
+        batch.Log.Clear();
+        batch.Error = null;
+    }
+
+    /// <summary>
+    /// Changes collected during a sync, written to the store in batches.
+    /// </summary>
+    private sealed class Batch(string source)
+    {
+        public string Source { get; } = source;
+
+        public List<string> Synced { get; } = [];
+
+        public List<string> Failed { get; } = [];
+
+        public List<SyncLogEntry> Log { get; } = [];
+
+        public string? LastTitle { get; set; }
+
+        /// <summary>
+        /// Gets or sets the error to store: <c>null</c> keeps the stored one, empty clears it.
+        /// </summary>
+        public string? Error { get; set; }
+
+        public bool CookieRejected { get; set; }
+
+        public int PendingWrites => Synced.Count + Failed.Count + Log.Count;
     }
 }

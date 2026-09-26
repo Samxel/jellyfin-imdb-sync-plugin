@@ -26,7 +26,7 @@ New versions are released by pushing a tag (`git tag v1.0.1 && git push origin v
 2. Sign in on [imdb.com](https://www.imdb.com), open the browser developer tools (F12) → **Network**, reload, click the `www.imdb.com` request and copy the value of the `cookie` request header.
    Paste the whole cookie; it is sent to IMDb the same way your browser does. (`at-main` starts with `Atza|` or `Atna|`.)
 3. Paste it, tick **Sync my watch history to IMDb**, **Save**, then **Test cookie**.
-4. Press **Sync now** to push your existing history once.
+4. Press **Sync now** to push your existing history once. Progress is shown live; every title sent (or refused, and why) appears in the **activity log** under *Advanced*.
 
 When IMDb stops accepting the cookie (e.g. you signed out of IMDb), the page shows *cookie expired* and syncing pauses until you paste a new one.
 
@@ -56,6 +56,7 @@ All endpoints need a Jellyfin user session (not an API key) and act on the calli
 | POST | `/ImdbSync/Me/Test` | check the cookie against IMDb |
 | POST | `/ImdbSync/Me/Sync` | start a full sync in the background |
 | POST | `/ImdbSync/Me/Reset` | forget what was already sent |
+| GET / DELETE | `/ImdbSync/Me/Log` | activity log (newest first, last 500 entries) / clear it |
 | GET | `/ImdbSync/Users` | admin overview (admins only) |
 
 ## Build

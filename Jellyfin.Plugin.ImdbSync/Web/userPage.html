@@ -40,6 +40,20 @@
         code { background: #0b0b0b; padding: 1px 5px; border-radius: 3px; }
         details summary { cursor: pointer; font-weight: 600; }
         .hidden { display: none; }
+        .progress { height: 6px; background: #0b0b0b; border-radius: 3px; overflow: hidden; margin-top: 10px; }
+        .progress > div { height: 100%; background: var(--accent); width: 0; transition: width .4s; }
+        .logbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 14px 0 8px; }
+        .logbar select { background: #0b0b0b; color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
+        .logwrap { max-height: 420px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; }
+        table.log { width: 100%; border-collapse: collapse; font-size: .85em; }
+        table.log td { padding: 6px 8px; border-top: 1px solid var(--border); vertical-align: top; }
+        table.log tr:first-child td { border-top: none; }
+        table.log td.t { color: var(--muted); white-space: nowrap; }
+        table.log .m { color: var(--muted); font-size: .9em; display: block; }
+        .st { display: inline-block; min-width: 64px; text-align: center; padding: 1px 6px; border-radius: 10px; font-size: .8em; font-weight: 700; }
+        .st-synced { background: var(--ok); color: #000; }
+        .st-refused, .st-cookie, .st-error { background: var(--err); color: #000; }
+        .st-info { background: #444; }
         a { color: var(--accent); }
     </style>
 </head>
@@ -64,6 +78,10 @@
                 <div class="stat"><b id="stPending">0</b><small>waiting</small></div>
                 <div class="stat"><b id="stFailed">0</b><small>refused by IMDb</small></div>
                 <div class="stat"><b id="stLast" style="font-size:1em">never</b><small>last sync</small></div>
+            </div>
+            <div id="progressBox" class="hidden">
+                <div class="progress"><div id="progressBar"></div></div>
+                <p class="hint" id="progressText"></p>
             </div>
             <p class="hint" id="stLastTitle"></p>
             <div class="msg" id="statusMsg"></div>
@@ -107,13 +125,26 @@
         </section>
 
         <section class="card">
-            <details>
-                <summary>Advanced</summary>
+            <details id="advDetails">
+                <summary id="advSummary">Advanced &amp; activity log</summary>
                 <p class="hint">"Resend everything" forgets which titles were already sent, so the next sync pushes your whole history again (e.g. after switching IMDb accounts).</p>
                 <button id="resetBtn">Resend everything</button>
                 <button class="danger" id="deleteBtn">Delete my IMDb data</button>
                 <button id="logoutBtn" class="hidden">Sign out</button>
                 <div class="msg" id="advMsg"></div>
+
+                <h2 style="margin-top:22px">Activity log</h2>
+                <p class="hint">Everything the plugin sent to IMDb (last 500 entries). "realtime" = right after watching, "manual" = Sync now, "daily" = nightly sync.</p>
+                <div class="logbar">
+                    <select id="logFilter">
+                        <option value="all">All entries</option>
+                        <option value="synced">Synced only</option>
+                        <option value="problems">Problems only</option>
+                    </select>
+                    <button id="logRefreshBtn">Refresh</button>
+                    <button class="danger" id="logClearBtn">Clear log</button>
+                </div>
+                <div class="logwrap"><table class="log"><tbody id="logBody"><tr><td class="t">Loading…</td></tr></tbody></table></div>
             </details>
         </section>
     </div>
@@ -234,11 +265,51 @@
         $('syncBtn').disabled = st.IsSyncing || !st.HasCookie || !st.Enabled || st.CookieExpired;
         $('testBtn').disabled = !st.HasCookie;
 
+        var p = st.Progress;
+        $('progressBox').classList.toggle('hidden', !p);
+        if (p) {
+            $('progressBar').style.width = (p.Total ? Math.round(p.Done * 100 / p.Total) : 0) + '%';
+            $('progressText').textContent = 'Sending ' + p.Done + ' / ' + p.Total + (p.Current ? ': ' + p.Current : '');
+        }
+
+        if ($('advDetails').open) { loadLog(); }
+
         clearTimeout(pollTimer);
         if (st.IsSyncing) {
             pollTimer = setTimeout(load, 3000);
         }
     }
+
+    var STATUS_LABEL = { synced: 'synced', refused: 'refused', error: 'error', cookie: 'cookie', info: 'info' };
+
+    function loadLog() {
+        return api('GET', '/ImdbSync/Me/Log').then(function (entries) {
+            var f = $('logFilter').value;
+            var rows = (entries || []).filter(function (e) {
+                if (f === 'synced') { return e.Status === 'synced'; }
+                if (f === 'problems') { return e.Status === 'refused' || e.Status === 'error' || e.Status === 'cookie'; }
+                return true;
+            }).map(function (e) {
+                var title = e.ImdbId
+                    ? '<a href="https://www.imdb.com/title/' + encodeURIComponent(e.ImdbId) + '/" target="_blank" rel="noopener">' + escapeHtml(e.Title) + '</a>'
+                    : escapeHtml(e.Title);
+                return '<tr><td class="t">' + escapeHtml(fmtDate(e.TimeUtc)) + '<span class="m">' + escapeHtml(e.Source) + '</span></td>'
+                    + '<td><span class="st st-' + escapeHtml(e.Status) + '">' + escapeHtml(STATUS_LABEL[e.Status] || e.Status) + '</span></td>'
+                    + '<td>' + title + (e.Message ? '<span class="m">' + escapeHtml(e.Message) + '</span>' : '') + '</td></tr>';
+            });
+            $('logBody').innerHTML = rows.length ? rows.join('') : '<tr><td class="t">Nothing here yet.</td></tr>';
+        }).catch(function (e) {
+            $('logBody').innerHTML = '<tr><td class="t">' + escapeHtml(e.message) + '</td></tr>';
+        });
+    }
+
+    $('advDetails').addEventListener('toggle', function () { if ($('advDetails').open) { loadLog(); } });
+    $('logFilter').addEventListener('change', loadLog);
+    $('logRefreshBtn').addEventListener('click', loadLog);
+    $('logClearBtn').addEventListener('click', function () {
+        if (!confirm('Clear the activity log? (Does not change what is synced.)')) { return; }
+        api('DELETE', '/ImdbSync/Me/Log').then(loadLog).catch(function (e) { show('advMsg', e.message, false); });
+    });
 
     function escapeHtml(s) {
         return String(s || '').replace(/[&<>"']/g, function (c) {

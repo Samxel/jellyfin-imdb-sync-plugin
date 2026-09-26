@@ -106,6 +106,7 @@ public class UserSettingsStore
     {
         settings.SyncedIds = new HashSet<string>(settings.SyncedIds ?? [], StringComparer.OrdinalIgnoreCase);
         settings.FailedIds = new HashSet<string>(settings.FailedIds ?? [], StringComparer.OrdinalIgnoreCase);
+        settings.Log ??= [];
     }
 
     private string GetPath(Guid userId) => Path.Combine(_directory, userId.ToString("N") + ".json");
