@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>IMDb Sync</title>
+</head>
+<body>
+    <div id="ImdbSyncConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+        <div data-role="content">
+            <div class="content-primary">
+                <h2>IMDb Sync</h2>
+                <p>
+                    Every user connects their <b>own</b> IMDb account on the self-service page.
+                    Share this link with your users (it works for non-admin accounts):
+                </p>
+                <p><a id="ImdbSyncUserPageLink" is="emby-linkbutton" class="button-link" target="_blank" href="#"></a></p>
+                <p class="fieldDescription">
+                    Tip: add it to the Jellyfin side menu via <code>menuLinks</code> in the web client's <code>config.json</code>.
+                </p>
+
+                <form id="ImdbSyncConfigForm">
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="EnableRealtimeSync" type="checkbox" is="emby-checkbox" />
+                            <span>Sync immediately when an item is finished or marked played</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">
+                            Otherwise only the daily scheduled task "Sync watch history to IMDb" pushes new items.
+                        </div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="RequestDelayMs">Delay between IMDb requests (ms)</label>
+                        <input id="RequestDelayMs" type="number" is="emby-input" min="0" max="10000" />
+                        <div class="fieldDescription">Used for bulk syncs so IMDb does not rate-limit the account.</div>
+                    </div>
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                            <span>Save</span>
+                        </button>
+                    </div>
+                </form>
+
+                <h3 style="margin-top:2em">Users</h3>
+                <div id="ImdbSyncUsers">Loading…</div>
+            </div>
+        </div>
+        <script type="text/javascript">
+            (function () {
+                var pluginId = '1f3069c0-4bfe-4b07-a586-a8b6d945d3be';
+                var page = document.querySelector('#ImdbSyncConfigPage');
+
+                function esc(s) {
+                    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+                        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+                    });
+                }
+
+                function fmt(d) {
+                    return d ? new Date(d.endsWith('Z') ? d : d + 'Z').toLocaleString() : '–';
+                }
+
+                function state(u) {
+                    if (u.CookieExpired) { return '<span style="color:#e5534b">cookie expired</span>'; }
+                    if (!u.HasCookie) { return 'not set up'; }
+                    if (!u.Enabled) { return 'disabled'; }
+                    return '<span style="color:#4caf50">active</span>';
+                }
+
+                function loadUsers() {
+                    ApiClient.getJSON(ApiClient.getUrl('ImdbSync/Users')).then(function (users) {
+                        var rows = users.map(function (u) {
+                            return '<tr><td>' + esc(u.UserName) + '</td><td>' + state(u) + '</td><td>' + u.SyncedCount
+                                + '</td><td>' + u.FailedCount + '</td><td>' + fmt(u.LastSyncUtc) + '</td><td>' + esc(u.LastError || '') + '</td></tr>';
+                        }).join('');
+                        page.querySelector('#ImdbSyncUsers').innerHTML =
+                            '<table style="width:100%;border-collapse:collapse;text-align:left">'
+                            + '<thead><tr><th>User</th><th>Status</th><th>On IMDb</th><th>Refused</th><th>Last sync</th><th>Last error</th></tr></thead>'
+                            + '<tbody>' + rows + '</tbody></table>';
+                    }).catch(function () {
+                        page.querySelector('#ImdbSyncUsers').textContent = 'Could not load users.';
+                    });
+                }
+
+                page.addEventListener('pageshow', function () {
+                    var link = ApiClient.getUrl('ImdbSync/Page');
+                    var a = page.querySelector('#ImdbSyncUserPageLink');
+                    a.href = link;
+                    a.textContent = link;
+
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        page.querySelector('#EnableRealtimeSync').checked = config.EnableRealtimeSync;
+                        page.querySelector('#RequestDelayMs').value = config.RequestDelayMs;
+                        Dashboard.hideLoadingMsg();
+                    });
+                    loadUsers();
+                });
+
+                page.querySelector('#ImdbSyncConfigForm').addEventListener('submit', function (e) {
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        config.EnableRealtimeSync = page.querySelector('#EnableRealtimeSync').checked;
+                        config.RequestDelayMs = parseInt(page.querySelector('#RequestDelayMs').value, 10) || 0;
+                        ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
+                            Dashboard.processPluginConfigurationUpdateResult(result);
+                        });
+                    });
+                    e.preventDefault();
+                    return false;
+                });
+            })();
+        </script>
+    </div>
+</body>
+</html>

@@ -1,16 +1,17 @@
 ---
-name: "Template"
-guid: "eb5d7894-8eef-4b36-aa6f-5d124e828ce1"
+name: "IMDb Sync"
+guid: "1f3069c0-4bfe-4b07-a586-a8b6d945d3be"
 version: "1.0.0.0"
-targetAbi: "10.11.0.0"
-framework: "net9.0"
-overview: "Short description about your plugin"
+targetAbi: "12.1.0.0"
+framework: "net10.0"
+overview: "Sync each user's Jellyfin watch history to their own IMDb account"
 description: >
-  This is a longer description that can span more than one
-  line and include details about your plugin.
+  Marks movies and episodes as watched on IMDb as soon as a user finishes
+  them in Jellyfin, plus a daily catch-up task. Every user connects their
+  own IMDb account by pasting their IMDb cookie on a self-service page.
 category: "General"
-owner: "jellyfin"
+owner: "samxel"
 artifacts:
-- "Jellyfin.Plugin.Template.dll"
+- "Jellyfin.Plugin.ImdbSync.dll"
 changelog: >
-  changelog
+  Initial release.
