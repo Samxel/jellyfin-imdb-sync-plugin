@@ -214,7 +214,7 @@ public class ImdbSyncController : ControllerBase
             {
                 try
                 {
-                    var result = await _syncService.SyncUserAsync(id, null, stopping).ConfigureAwait(false);
+                    var result = await _syncService.SyncUserAsync(id, SyncSource.Manual, null, stopping).ConfigureAwait(false);
                     _logger.LogInformation("Manual IMDb sync for user {UserId}: {Message}", id, result.Message);
                 }
                 catch (OperationCanceledException)
@@ -228,6 +228,41 @@ public class ImdbSyncController : ControllerBase
             stopping);
 
         return Accepted();
+    }
+
+    /// <summary>
+    /// Gets the activity log of the current user, newest first.
+    /// </summary>
+    /// <param name="limit">The maximum number of entries.</param>
+    /// <returns>The log entries.</returns>
+    [HttpGet("Me/Log")]
+    public async Task<ActionResult<IEnumerable<SyncLogEntry>>> GetMyLog([FromQuery] int limit = ImdbUserSettings.MaxLogEntries)
+    {
+        var userId = await GetUserIdAsync().ConfigureAwait(false);
+        if (userId is null)
+        {
+            return BadRequest();
+        }
+
+        var log = _store.Get(userId.Value).Log;
+        return log.AsEnumerable().Reverse().Take(Math.Clamp(limit, 1, ImdbUserSettings.MaxLogEntries)).ToList();
+    }
+
+    /// <summary>
+    /// Clears the activity log of the current user.
+    /// </summary>
+    /// <returns>No content.</returns>
+    [HttpDelete("Me/Log")]
+    public async Task<ActionResult> ClearMyLog()
+    {
+        var userId = await GetUserIdAsync().ConfigureAwait(false);
+        if (userId is null)
+        {
+            return BadRequest();
+        }
+
+        _store.Update(userId.Value, s => s.Log.Clear());
+        return NoContent();
     }
 
     /// <summary>
@@ -296,6 +331,7 @@ public class ImdbSyncController : ControllerBase
             FailedCount = s.FailedIds.Count,
             PendingCount = pending,
             IsSyncing = _syncService.IsSyncing(userId),
+            Progress = _syncService.GetProgress(userId),
             LastSyncUtc = s.LastSyncUtc,
             LastSuccessUtc = s.LastSuccessUtc,
             LastSyncedTitle = s.LastSyncedTitle,

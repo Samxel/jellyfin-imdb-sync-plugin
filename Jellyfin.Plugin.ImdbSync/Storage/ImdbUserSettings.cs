@@ -9,6 +9,11 @@ namespace Jellyfin.Plugin.ImdbSync.Storage;
 public class ImdbUserSettings
 {
     /// <summary>
+    /// The maximum number of activity log entries kept per user.
+    /// </summary>
+    public const int MaxLogEntries = 500;
+
+    /// <summary>
     /// Gets or sets a value indicating whether syncing is enabled for this user.
     /// </summary>
     public bool Enabled { get; set; }
@@ -48,6 +53,15 @@ public class ImdbUserSettings
 #pragma warning restore CA2227
 
     /// <summary>
+    /// Gets or sets the activity log, oldest first, capped at <see cref="MaxLogEntries"/>.
+    /// </summary>
+#pragma warning disable CA2227 // Setter needed for JSON deserialization
+#pragma warning disable CA1002 // Concrete list keeps JSON (de)serialization simple
+    public List<SyncLogEntry> Log { get; set; } = [];
+#pragma warning restore CA1002
+#pragma warning restore CA2227
+
+    /// <summary>
     /// Gets or sets the time of the last completed sync run.
     /// </summary>
     public DateTime? LastSyncUtc { get; set; }
@@ -71,4 +85,17 @@ public class ImdbUserSettings
     /// Gets or sets a value indicating whether IMDb rejected the cookie (expired or invalid).
     /// </summary>
     public bool CookieExpired { get; set; }
+
+    /// <summary>
+    /// Appends entries to the activity log and trims it.
+    /// </summary>
+    /// <param name="entries">The entries.</param>
+    public void AddLog(IEnumerable<SyncLogEntry> entries)
+    {
+        Log.AddRange(entries);
+        if (Log.Count > MaxLogEntries)
+        {
+            Log.RemoveRange(0, Log.Count - MaxLogEntries);
+        }
+    }
 }

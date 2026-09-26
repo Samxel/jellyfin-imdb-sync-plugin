@@ -1,4 +1,5 @@
 using System;
+using Jellyfin.Plugin.ImdbSync.Sync;
 
 namespace Jellyfin.Plugin.ImdbSync.Api;
 
@@ -71,6 +72,11 @@ public class UserStatusDto
     /// Gets or sets a value indicating whether a sync is running right now.
     /// </summary>
     public bool IsSyncing { get; set; }
+
+    /// <summary>
+    /// Gets or sets the progress of a running bulk sync.
+    /// </summary>
+    public SyncProgress? Progress { get; set; }
 
     /// <summary>
     /// Gets or sets the last sync time.
