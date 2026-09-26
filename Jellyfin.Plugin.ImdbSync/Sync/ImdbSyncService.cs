@@ -179,6 +179,14 @@ public class ImdbSyncService
     public async Task SyncAllAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(progress);
+
+        // Remove cookies of users deleted while the plugin was not running.
+        foreach (var orphan in _store.GetUserIds().Where(id => _userManager.GetUserById(id) is null).ToList())
+        {
+            _store.Delete(orphan);
+            _logger.LogInformation("Deleted IMDb sync data of removed user {UserId}", orphan);
+        }
+
         var userIds = _store.GetUserIds().Where(id => IsActive(_store.Get(id), out _)).ToList();
         for (var i = 0; i < userIds.Count; i++)
         {

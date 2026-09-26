@@ -14,6 +14,11 @@ namespace Jellyfin.Plugin.ImdbSync.Imdb;
 public sealed partial record ImdbCredentials(string Token, string SessionId, string CookieHeader)
 {
     /// <summary>
+    /// The maximum accepted length of a pasted cookie.
+    /// </summary>
+    public const int MaxCookieLength = 16 * 1024;
+
+    /// <summary>
     /// Parses what a user pasted: either a full cookie header (<c>session-id=...; at-main=Atza|...</c>)
     /// or only the <c>at-main</c> value.
     /// </summary>
@@ -22,7 +27,11 @@ public sealed partial record ImdbCredentials(string Token, string SessionId, str
     /// <returns>The credentials, or <c>null</c> if no token could be found.</returns>
     public static ImdbCredentials? Parse(string? cookie, string? sessionIdOverride)
     {
-        if (string.IsNullOrWhiteSpace(cookie))
+        // Control characters (e.g. CR/LF) would allow header injection.
+        if (string.IsNullOrWhiteSpace(cookie)
+            || cookie.Length > MaxCookieLength
+            || HasControlChars(cookie.Trim())
+            || (sessionIdOverride is not null && (sessionIdOverride.Length > 100 || HasControlChars(sessionIdOverride.Trim()) || sessionIdOverride.Contains(';', StringComparison.Ordinal))))
         {
             return null;
         }
@@ -70,7 +79,7 @@ public sealed partial record ImdbCredentials(string Token, string SessionId, str
     /// Returns a masked version of the token for display.
     /// </summary>
     /// <returns>The masked token.</returns>
-    public string MaskedToken() => Token.Length <= 16 ? Token[..5] + "…" : Token[..10] + "…" + Token[^4..];
+    public string MaskedToken() => Token.Length <= 16 ? Token[..5] + "…" : Token[..5] + "…" + Token[^4..];
 
     /// <summary>
     /// Returns a string that does not contain any secret.
@@ -80,6 +89,8 @@ public sealed partial record ImdbCredentials(string Token, string SessionId, str
 
     [GeneratedRegex(@"^At[A-Za-z]{2}\|\S+$")]
     private static partial Regex TokenRegex();
+
+    private static bool HasControlChars(string value) => value.Any(char.IsControl);
 
     private static string? Get(List<KeyValuePair<string, string>> values, string key)
         => values.LastOrDefault(kv => kv.Key.Equals(key, StringComparison.OrdinalIgnoreCase)).Value;

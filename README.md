@@ -54,6 +54,17 @@ Dashboard → Plugins → **IMDb Sync**:
 - Per-user data is stored in `<config>/plugins/configurations/ImdbSync/users/<userId>.json`. The cookie is never returned by any API endpoint (only a masked version) and is not part of the plugin XML configuration.
 - Titles already sent are remembered and not sent again. Titles IMDb refuses are not retried automatically; **Resend everything** on the user page resets both lists.
 
+### Security
+
+- All `/ImdbSync/Me*` endpoints need a valid Jellyfin user session and only ever touch the calling user's data. `/ImdbSync/Users` is admin-only. Only the static page `/ImdbSync/Page` is anonymous, and it contains no data.
+- Jellyfin authenticates with a header token, not a cookie, so cross-site request forgery does not apply.
+- The page is served with a strict Content-Security-Policy: it can only talk to the Jellyfin origin, cannot be framed by other sites, and sends no referrer.
+- Cookies are never returned by the API; only a masked `Atza|…abcd` is shown. Cookies are also never written to the Jellyfin log.
+- Requests to IMDb use a dedicated HTTP handler with no cookie jar, so no IMDb cookies are shared between users, and with redirects disabled, so the cookie is never forwarded to another host.
+- Settings files are readable by the Jellyfin user only (`0600`). They are deleted when the Jellyfin user is deleted.
+- Pasted cookies are length-limited and rejected if they contain control characters, which prevents header injection.
+- **Not protected:** the cookie is stored **unencrypted** on disk. Anyone with access to the Jellyfin config directory (server admins, backups) can read it. The cookie also passes through your reverse proxy, e.g. Cloudflare, when it is saved.
+
 ### API
 
 All endpoints need a Jellyfin user session (not an API key) and act on the calling user.

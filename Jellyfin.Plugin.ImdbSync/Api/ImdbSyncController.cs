@@ -79,6 +79,13 @@ public class ImdbSyncController : ControllerBase
             return NotFound();
         }
 
+        // The page runs on the Jellyfin origin and reads the Jellyfin access token: lock it down.
+        var headers = Response.Headers;
+        headers["Content-Security-Policy"] = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+            + "connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+        headers["X-Frame-Options"] = "SAMEORIGIN";
+        headers["Referrer-Policy"] = "no-referrer";
+        headers["Cache-Control"] = "no-store";
         return File(stream, "text/html; charset=utf-8");
     }
 
@@ -106,6 +113,16 @@ public class ImdbSyncController : ControllerBase
         if (userId is null)
         {
             return BadRequest("This endpoint needs a user session, not an API key.");
+        }
+
+        if (update.Cookie?.Length > ImdbCredentials.MaxCookieLength || update.SessionId?.Length > 100)
+        {
+            return BadRequest("Cookie or session-id is too long.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(update.SessionId) && ImdbCredentials.Parse("at-main=Atza|x", update.SessionId) is null)
+        {
+            return BadRequest("Invalid session-id.");
         }
 
         if (!string.IsNullOrWhiteSpace(update.Cookie) && ImdbCredentials.Parse(update.Cookie, update.SessionId) is null)
@@ -208,6 +225,11 @@ public class ImdbSyncController : ControllerBase
         }
 
         var id = userId.Value;
+        if (_syncService.IsSyncing(id))
+        {
+            return Conflict("A sync is already running.");
+        }
+
         var stopping = _lifetime.ApplicationStopping;
         _ = Task.Run(
             async () =>
