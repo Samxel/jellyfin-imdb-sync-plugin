@@ -13,12 +13,12 @@ Requires Jellyfin **12.1**.
 Dashboard → Plugins → **Repositories** → add
 
 ```
-https://raw.githubusercontent.com/Samxel/JellyIMDb/master/manifest.json
+https://raw.githubusercontent.com/Samxel/jellyfin-imdb-sync-plugin/master/manifest.json
 ```
 
 then install **IMDb Sync** from the catalog and restart Jellyfin.
 
-New versions are released by pushing a tag (`git tag v1.0.1 && git push origin v1.0.1`); the release workflow builds the zip, creates the GitHub release and adds it to `manifest.json`. Bump `version`/`changelog` in `build.yaml` alongside.
+New versions are released by pushing a tag (`git tag v1.0.1 && git push origin v1.0.1`) or by running the *Release Plugin* workflow manually with a version; the workflow builds the zip, creates the GitHub release and adds it to `manifest.json`. Bump `version`/`changelog` in `build.yaml` alongside.
 
 ## Setup for users
 
