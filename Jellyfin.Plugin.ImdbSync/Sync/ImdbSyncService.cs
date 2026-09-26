@@ -108,7 +108,18 @@ public class ImdbSyncService
         await userLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            // Marking a whole series played fires one event per episode: re-check and throttle inside the lock.
+            var current = _store.Get(userId);
+            if (current.SyncedIds.Contains(imdbId) || current.FailedIds.Contains(imdbId))
+            {
+                return;
+            }
+
             await PushAsync(userId, credentials, imdbId, item.Name, cancellationToken).ConfigureAwait(false);
+            if (RequestDelayMs > 0)
+            {
+                await Task.Delay(RequestDelayMs, cancellationToken).ConfigureAwait(false);
+            }
         }
         finally
         {
