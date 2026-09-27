@@ -3,6 +3,14 @@
     "guid": "1f3069c0-4bfe-4b07-a586-a8b6d945d3be",
     "versions": [
       {
+        "version": "1.4.0.0",
+        "changelog": "Seerr integration: IMDb watchlist titles missing in Jellyfin are requested on Seerr with the user's own Seerr account (admin setting, on by default).",
+        "targetAbi": "12.1.0.0",
+        "sourceUrl": "https://github.com/Samxel/jellyfin-imdb-sync-plugin/releases/download/v1.4.0/imdb-sync_1.4.0.0.zip",
+        "checksum": "052179bd17373c975ab000feb7cefb6c",
+        "timestamp": "2026-09-27T11:50:36Z"
+      },
+      {
         "version": "1.3.0.0",
         "changelog": "Mark a whole series as watched on IMDb once it has ended, is complete in Jellyfin (no missing aired episodes) and every episode was watched.",
         "targetAbi": "12.1.0.0",
