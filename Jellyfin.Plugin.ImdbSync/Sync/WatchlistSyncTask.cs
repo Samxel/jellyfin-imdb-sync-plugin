@@ -41,6 +41,8 @@ public class WatchlistSyncTask : IScheduledTask
     /// <inheritdoc />
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
     {
+        // Jellyfin runs an interval task that never ran only one hour after startup; also run it at startup.
+        yield return new TaskTriggerInfo { Type = TaskTriggerInfoType.StartupTrigger };
         yield return new TaskTriggerInfo
         {
             Type = TaskTriggerInfoType.IntervalTrigger,

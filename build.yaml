@@ -1,7 +1,7 @@
 ---
 name: "IMDb Sync"
 guid: "1f3069c0-4bfe-4b07-a586-a8b6d945d3be"
-version: "1.2.0.0"
+version: "1.2.1.0"
 targetAbi: "12.1.0.0"
 framework: "net10.0"
 overview: "Sync each user's Jellyfin watch history to their own IMDb account"
@@ -14,5 +14,5 @@ owner: "samxel"
 artifacts:
 - "Jellyfin.Plugin.ImdbSync.dll"
 changelog: >
-  Two-way sync between each user's IMDb watchlist and a private Jellyfin
-  playlist "Watchlist" (movies, and series as their first episode).
+  Watchlist sync also runs at server startup (an interval task that never ran
+  would otherwise only start one hour after startup).
