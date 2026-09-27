@@ -5,6 +5,7 @@ Syncs every Jellyfin user's watch history and watchlist with **their own IMDb ac
 ## Features
 
 - **Watch history → IMDb:** finished movies and episodes are marked as watched on IMDb right away, and a daily task catches up on the rest.
+  - A series is marked as watched as a whole once it has ended, no aired episode is missing in Jellyfin, and every episode (specials excluded) has been watched.
 - **Watchlist ↔ playlist:** each user's IMDb watchlist is kept in sync with their own private Jellyfin playlist *Watchlist*, in both directions, including removals.
   - A series appears in the playlist as its first episode only, not every episode.
   - A safety stop holds back mass removals.

@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.ImdbSync.Imdb;
 using Jellyfin.Plugin.ImdbSync.Storage;
+using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
@@ -30,6 +31,7 @@ public class ImdbSyncService
     private readonly ImdbClient _imdbClient;
     private readonly ILibraryManager _libraryManager;
     private readonly IUserManager _userManager;
+    private readonly IUserDataManager _userDataManager;
     private readonly ILogger<ImdbSyncService> _logger;
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _userLocks = new();
     private readonly ConcurrentDictionary<Guid, SyncProgress> _progress = new();
@@ -41,18 +43,21 @@ public class ImdbSyncService
     /// <param name="imdbClient">The IMDb client.</param>
     /// <param name="libraryManager">The library manager.</param>
     /// <param name="userManager">The user manager.</param>
+    /// <param name="userDataManager">The user data manager.</param>
     /// <param name="logger">The logger.</param>
     public ImdbSyncService(
         UserSettingsStore store,
         ImdbClient imdbClient,
         ILibraryManager libraryManager,
         IUserManager userManager,
+        IUserDataManager userDataManager,
         ILogger<ImdbSyncService> logger)
     {
         _store = store;
         _imdbClient = imdbClient;
         _libraryManager = libraryManager;
         _userManager = userManager;
+        _userDataManager = userDataManager;
         _logger = logger;
     }
 
@@ -122,6 +127,7 @@ public class ImdbSyncService
             return;
         }
 
+        var targets = new List<(string ImdbId, string Name)>();
         var imdbId = GetSyncableImdbId(item, settings);
         if (imdbId is null)
         {
@@ -133,10 +139,24 @@ public class ImdbSyncService
                 Message = "Skipped: no IMDb id in the Jellyfin metadata."
             };
             _store.Update(userId, s => s.AddLog([skipped]));
-            return;
+        }
+        else if (!settings.SyncedIds.Contains(imdbId))
+        {
+            targets.Add((imdbId, DisplayName(item)));
         }
 
-        if (settings.SyncedIds.Contains(imdbId))
+        // The last episode of a finished series also marks the series itself as watched.
+        var user = _userManager.GetUserById(userId);
+        if (item is Episode { Series: { } series } && user is not null)
+        {
+            var seriesId = SeriesImdbId(series);
+            if (seriesId is not null && !settings.SyncedIds.Contains(seriesId) && !settings.FailedIds.Contains(seriesId) && IsSeriesComplete(series, user))
+            {
+                targets.Add((seriesId, SeriesDisplayName(series)));
+            }
+        }
+
+        if (targets.Count == 0)
         {
             return;
         }
@@ -145,23 +165,26 @@ public class ImdbSyncService
         await userLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // Marking a whole series played fires one event per episode: re-check and throttle inside the lock.
-            var current = _store.Get(userId);
-            if (current.SyncedIds.Contains(imdbId) || current.FailedIds.Contains(imdbId))
+            foreach (var (id, name) in targets)
             {
-                return;
-            }
+                // Marking a whole series played fires one event per episode: re-check and throttle inside the lock.
+                var current = _store.Get(userId);
+                if (current.SyncedIds.Contains(id) || current.FailedIds.Contains(id))
+                {
+                    continue;
+                }
 
-            var batch = new Batch(SyncSource.Realtime);
-            if (await PushOneAsync(userId, credentials, imdbId, DisplayName(item), batch, cancellationToken).ConfigureAwait(false) == PushOutcome.Synced)
-            {
-                batch.Error = string.Empty;
-            }
+                var batch = new Batch(SyncSource.Realtime);
+                if (await PushOneAsync(userId, credentials, id, name, batch, cancellationToken).ConfigureAwait(false) == PushOutcome.Synced)
+                {
+                    batch.Error = string.Empty;
+                }
 
-            Flush(userId, batch);
-            if (RequestDelayMs > 0)
-            {
-                await Task.Delay(RequestDelayMs, cancellationToken).ConfigureAwait(false);
+                Flush(userId, batch);
+                if (RequestDelayMs > 0)
+                {
+                    await Task.Delay(RequestDelayMs, cancellationToken).ConfigureAwait(false);
+                }
             }
         }
         finally
@@ -318,6 +341,14 @@ public class ImdbSyncService
         }
     }
 
+    private static string? SeriesImdbId(Series series)
+    {
+        var id = series.GetProviderId(MetadataProvider.Imdb);
+        return !string.IsNullOrWhiteSpace(id) && id.StartsWith("tt", StringComparison.OrdinalIgnoreCase) ? id.Trim() : null;
+    }
+
+    private static string SeriesDisplayName(Series series) => series.Name + " (whole series)";
+
     private static bool IsWantedType(BaseItem item, ImdbUserSettings settings) => item switch
     {
         Movie => settings.SyncMovies,
@@ -332,6 +363,30 @@ public class ImdbSyncService
     {
         credentials = ImdbCredentials.Parse(settings.Cookie, settings.SessionId);
         return settings.Enabled && !settings.CookieExpired && credentials is not null;
+    }
+
+    /// <summary>
+    /// A series counts as watched when it has ended, no aired episode is missing from the library
+    /// (Jellyfin keeps missing episodes as virtual items) and every regular episode was played. Specials are ignored.
+    /// </summary>
+    private bool IsSeriesComplete(Series series, Jellyfin.Database.Implementations.Entities.User user)
+    {
+        if (series.Status != SeriesStatus.Ended)
+        {
+            return false;
+        }
+
+        var episodes = series.GetEpisodes(user, new DtoOptions(false), true)
+            .OfType<Episode>()
+            .Where(e => (e.ParentIndexNumber ?? 0) > 0)
+            .ToList();
+        var now = DateTime.UtcNow;
+        if (episodes.Count == 0 || episodes.Any(e => e.IsVirtualItem && (e.PremiereDate is null || e.PremiereDate <= now)))
+        {
+            return false;
+        }
+
+        return episodes.Where(e => !e.IsVirtualItem).All(e => _userDataManager.GetUserData(user, e)?.Played == true);
     }
 
     private List<(string ImdbId, string Name)> GetPendingItems(Guid userId, ImdbUserSettings settings)
@@ -377,6 +432,28 @@ public class ImdbSyncService
                 && seen.Add(imdbId))
             {
                 result.Add((imdbId, DisplayName(item)));
+            }
+        }
+
+        // Finished series whose episodes were all watched are marked as a whole as well.
+        if (settings.SyncEpisodes)
+        {
+            foreach (var series in _libraryManager.GetItemList(new InternalItemsQuery(user)
+            {
+                IncludeItemTypes = [BaseItemKind.Series],
+                IsPlayed = true,
+                Recursive = true
+            }).OfType<Series>())
+            {
+                var seriesId = SeriesImdbId(series);
+                if (seriesId is not null
+                    && !settings.SyncedIds.Contains(seriesId)
+                    && !settings.FailedIds.Contains(seriesId)
+                    && seen.Add(seriesId)
+                    && IsSeriesComplete(series, user))
+                {
+                    result.Add((seriesId, SeriesDisplayName(series)));
+                }
             }
         }
 
