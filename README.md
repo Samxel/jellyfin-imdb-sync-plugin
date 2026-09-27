@@ -15,6 +15,8 @@ A Jellyfin plugin that marks everything a user watches in Jellyfin as **watched 
 - **Daily catch-up:** the scheduled task *Sync watch history to IMDb* (04:00 by default) sends every played item that is not on IMDb yet, e.g. the history from before the plugin was installed.
 - **Per user:** every Jellyfin user connects their own IMDb account by pasting their IMDb cookie on a self-service page. Admins never have to handle other people's cookies.
 
+- **Watchlist ↔ playlist (optional):** each user's IMDb watchlist is kept in sync with their own private Jellyfin playlist *Watchlist*, in both directions, including removals.
+
 Requires Jellyfin **12.1**.
 
 ## Install
@@ -54,6 +56,16 @@ Dashboard → Plugins → **IMDb Sync**:
 - Per-user data is stored in `<config>/plugins/configurations/ImdbSync/users/<userId>.json`. The cookie is never returned by any API endpoint (only a masked version) and is not part of the plugin XML configuration.
 - Titles already sent are remembered and not sent again. Titles IMDb refuses are not retried automatically; **Resend everything** on the user page resets both lists.
 
+### Watchlist ↔ playlist
+
+- Every user who enables it gets their **own private** playlist *Watchlist* (owner = that user, not public). If they already have a playlist with that name, it is reused.
+- **Two-way sync.** The plugin remembers both lists as they were after the last sync. Anything added or removed on one side since then is applied to the other side. If a title was removed on one side and added on the other, the addition wins.
+- **First sync** (and after *Re-merge*, a new cookie, or re-enabling): both lists are merged and nothing is removed.
+- **Movies** appear as themselves. **Series** appear as their **first episode** (S01E01) instead of every episode. Any episode of a series in the playlist counts as "this series is on the watchlist"; removing the series on IMDb removes all of its episodes from the playlist.
+- Titles that are not in the Jellyfin library stay on IMDb only. If they are added to the library later, they show up in the playlist.
+- **When:** changes to the playlist are synced about 10 seconds later. Changes on IMDb are picked up by the task *Sync IMDb watchlist with playlist*, every 15 minutes by default. The user page also has a *Sync watchlist now* button.
+- **Safety stop:** if a sync would remove more than 10 titles and more than half of a list at once, those removals are held back and reported, for example when a list suddenly looks empty.
+
 ### Security
 
 - All `/ImdbSync/Me*` endpoints need a valid Jellyfin user session and only ever touch the calling user's data. `/ImdbSync/Users` is admin-only. Only the static page `/ImdbSync/Page` is anonymous, and it contains no data.
@@ -77,6 +89,10 @@ All endpoints need a Jellyfin user session (not an API key) and act on the calli
 | POST | `/ImdbSync/Me/Sync` | start a full sync in the background |
 | POST | `/ImdbSync/Me/Reset` | forget what was already sent |
 | GET / DELETE | `/ImdbSync/Me/Log` | activity log (newest first, last 500 entries) / clear it |
+| POST | `/ImdbSync/Me/Watchlist/Sync` | run the watchlist ↔ playlist sync now |
+| POST | `/ImdbSync/Me/Watchlist/Reset` | re-merge: forget the last state, next sync merges without removing |
+| POST | `/ImdbSync/Users/{id}/Watchlist/Sync?enable=` | admin: run (and optionally enable) a user's watchlist sync |
+| GET | `/ImdbSync/Users/{id}/Log` | admin: a user's activity log |
 | GET | `/ImdbSync/Users` | admin overview (admins only) |
 
 ## Build

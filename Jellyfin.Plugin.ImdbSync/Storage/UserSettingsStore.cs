@@ -121,6 +121,15 @@ public class UserSettingsStore
         settings.SyncedIds = new HashSet<string>(settings.SyncedIds ?? [], StringComparer.OrdinalIgnoreCase);
         settings.FailedIds = new HashSet<string>(settings.FailedIds ?? [], StringComparer.OrdinalIgnoreCase);
         settings.Log ??= [];
+        if (settings.WatchlistBaselineImdb is not null)
+        {
+            settings.WatchlistBaselineImdb = new HashSet<string>(settings.WatchlistBaselineImdb, StringComparer.OrdinalIgnoreCase);
+        }
+
+        if (settings.WatchlistBaselineJellyfin is not null)
+        {
+            settings.WatchlistBaselineJellyfin = new HashSet<string>(settings.WatchlistBaselineJellyfin, StringComparer.OrdinalIgnoreCase);
+        }
     }
 
     private string GetPath(Guid userId) => Path.Combine(_directory, userId.ToString("N") + ".json");

@@ -29,4 +29,9 @@ public class UpdateSettingsDto
     /// Gets or sets a value indicating whether episodes are synced.
     /// </summary>
     public bool? SyncEpisodes { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the IMDb watchlist is synced with the "Watchlist" playlist.
+    /// </summary>
+    public bool? WatchlistEnabled { get; set; }
 }
