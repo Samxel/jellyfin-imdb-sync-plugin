@@ -17,4 +17,20 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets the delay in milliseconds between two IMDb requests during a bulk sync.
     /// </summary>
     public int RequestDelayMs { get; set; } = 500;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether IMDb watchlist titles missing in Jellyfin are requested on Seerr
+    /// for every user with watchlist sync (only when <see cref="SeerrUrl"/> and <see cref="SeerrApiKey"/> are set).
+    /// </summary>
+    public bool SeerrRequestsEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets the Seerr URL (e.g. https://seerr.example.com). Empty disables Seerr requests.
+    /// </summary>
+    public string SeerrUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the Seerr API key.
+    /// </summary>
+    public string SeerrApiKey { get; set; } = string.Empty;
 }

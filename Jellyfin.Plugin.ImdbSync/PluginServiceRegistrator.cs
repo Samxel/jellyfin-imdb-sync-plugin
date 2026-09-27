@@ -2,6 +2,7 @@ using System;
 using System.Net.Http;
 using Jellyfin.Data.Events.Users;
 using Jellyfin.Plugin.ImdbSync.Imdb;
+using Jellyfin.Plugin.ImdbSync.Seerr;
 using Jellyfin.Plugin.ImdbSync.Storage;
 using Jellyfin.Plugin.ImdbSync.Sync;
 using MediaBrowser.Controller;
@@ -28,6 +29,8 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
                 AllowAutoRedirect = false,
                 PooledConnectionLifetime = TimeSpan.FromMinutes(5)
             });
+        serviceCollection.AddHttpClient(SeerrClient.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(30));
+        serviceCollection.AddSingleton<SeerrClient>();
         serviceCollection.AddSingleton<UserSettingsStore>();
         serviceCollection.AddSingleton<ImdbClient>();
         serviceCollection.AddSingleton<ImdbSyncService>();
