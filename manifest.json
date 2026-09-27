@@ -3,6 +3,14 @@
     "guid": "1f3069c0-4bfe-4b07-a586-a8b6d945d3be",
     "versions": [
       {
+        "version": "1.4.1.0",
+        "changelog": "Seerr: treat \"already exists\" answers (HTTP 409 or a duplicate-key error) as handled instead of retrying every sync.",
+        "targetAbi": "12.1.0.0",
+        "sourceUrl": "https://github.com/Samxel/jellyfin-imdb-sync-plugin/releases/download/v1.4.1/imdb-sync_1.4.1.0.zip",
+        "checksum": "2c20edffb8aedd5cae6de8c7ae638939",
+        "timestamp": "2026-09-27T11:59:32Z"
+      },
+      {
         "version": "1.4.0.0",
         "changelog": "Seerr integration: IMDb watchlist titles missing in Jellyfin are requested on Seerr with the user's own Seerr account (admin setting, on by default).",
         "targetAbi": "12.1.0.0",
