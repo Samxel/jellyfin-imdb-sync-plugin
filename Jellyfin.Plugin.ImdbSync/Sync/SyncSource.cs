@@ -13,4 +13,7 @@ public static class SyncSource
 
     /// <summary>The daily scheduled task.</summary>
     public const string Daily = "daily";
+
+    /// <summary>The IMDb watchlist / Jellyfin playlist sync.</summary>
+    public const string Watchlist = "watchlist";
 }

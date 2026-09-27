@@ -92,6 +92,23 @@
         </section>
 
         <section class="card">
+            <h2>Watchlist <span id="wlBadge" class="badge off">off</span></h2>
+            <p class="hint">Keeps your IMDb watchlist and your private Jellyfin playlist <b>"Watchlist"</b> in sync, in both directions: add or remove a movie or series on either side and the other side follows. A series appears in the playlist as its first episode (not every episode); adding any episode of a series to the playlist puts the series on your IMDb watchlist. Titles that are not in this Jellyfin library stay on IMDb only.</p>
+            <label class="row"><input type="checkbox" id="watchlistEnabled"> Sync my IMDb watchlist with my playlist "Watchlist"</label>
+            <div class="stats" id="wlStats">
+                <div class="stat"><b id="wlImdb">–</b><small>on IMDb watchlist</small></div>
+                <div class="stat"><b id="wlPlaylist">–</b><small>in playlist (movies + series)</small></div>
+                <div class="stat"><b id="wlLast" style="font-size:1em">never</b><small>last watchlist sync</small></div>
+            </div>
+            <div class="msg" id="wlMsg"></div>
+            <div style="margin-top:12px">
+                <button class="primary" id="wlSyncBtn">Sync watchlist now</button>
+                <button id="wlResetBtn">Re-merge</button>
+            </div>
+            <p class="hint">Changes to the playlist are synced within seconds, changes on IMDb every 15 minutes. "Re-merge" combines both sides again without removing anything (use it if the safety stop held back removals).</p>
+        </section>
+
+        <section class="card">
             <h2>Settings</h2>
             <label class="row"><input type="checkbox" id="enabled"> Sync my watch history to IMDb</label>
             <label class="row"><input type="checkbox" id="syncMovies"> Movies</label>
@@ -134,12 +151,13 @@
                 <div class="msg" id="advMsg"></div>
 
                 <h2 style="margin-top:22px">Activity log</h2>
-                <p class="hint">Everything the plugin sent to IMDb (last 500 entries). "realtime" = right after watching, "manual" = Sync now, "daily" = nightly sync.</p>
+                <p class="hint">Everything the plugin sent to IMDb (last 500 entries). "realtime" = right after watching, "manual" = Sync now, "daily" = nightly sync, "watchlist" = watchlist ↔ playlist.</p>
                 <div class="logbar">
                     <select id="logFilter">
                         <option value="all">All entries</option>
                         <option value="synced">Synced only</option>
                         <option value="problems">Problems only</option>
+                        <option value="watchlist">Watchlist only</option>
                     </select>
                     <button id="logRefreshBtn">Refresh</button>
                     <button class="danger" id="logClearBtn">Clear log</button>
@@ -265,6 +283,18 @@
         $('syncBtn').disabled = st.IsSyncing || !st.HasCookie || !st.Enabled || st.CookieExpired;
         $('testBtn').disabled = !st.HasCookie;
 
+        $('watchlistEnabled').checked = st.WatchlistEnabled;
+        var wb = $('wlBadge');
+        if (!st.WatchlistEnabled) { wb.className = 'badge off'; wb.textContent = 'off'; }
+        else if (st.WatchlistError) { wb.className = 'badge err'; wb.textContent = 'attention'; }
+        else { wb.className = 'badge ok'; wb.textContent = st.WatchlistSyncing ? 'syncing…' : 'active'; }
+        $('wlImdb').textContent = st.WatchlistLastSyncUtc ? st.WatchlistImdbCount : '–';
+        $('wlPlaylist').textContent = st.WatchlistLastSyncUtc ? st.WatchlistPlaylistCount : '–';
+        $('wlLast').textContent = st.WatchlistSyncing ? 'running…' : fmtDate(st.WatchlistLastSyncUtc);
+        show('wlMsg', st.WatchlistEnabled && st.WatchlistError ? st.WatchlistError : '', false);
+        $('wlSyncBtn').disabled = !st.WatchlistEnabled || st.WatchlistSyncing || !st.HasCookie || st.CookieExpired;
+        $('wlResetBtn').disabled = !st.WatchlistEnabled;
+
         var p = st.Progress;
         $('progressBox').classList.toggle('hidden', !p);
         if (p) {
@@ -275,7 +305,7 @@
         if ($('advDetails').open) { loadLog(); }
 
         clearTimeout(pollTimer);
-        if (st.IsSyncing) {
+        if (st.IsSyncing || st.WatchlistSyncing) {
             pollTimer = setTimeout(load, 3000);
         }
     }
@@ -288,6 +318,7 @@
             var rows = (entries || []).filter(function (e) {
                 if (f === 'synced') { return e.Status === 'synced'; }
                 if (f === 'problems') { return e.Status === 'refused' || e.Status === 'error' || e.Status === 'cookie'; }
+                if (f === 'watchlist') { return e.Source === 'watchlist'; }
                 return true;
             }).map(function (e) {
                 var title = e.ImdbId
@@ -327,7 +358,8 @@
         var body = {
             Enabled: $('enabled').checked,
             SyncMovies: $('syncMovies').checked,
-            SyncEpisodes: $('syncEpisodes').checked
+            SyncEpisodes: $('syncEpisodes').checked,
+            WatchlistEnabled: $('watchlistEnabled').checked
         };
         var cookie = $('cookie').value.trim();
         if (cookie) { body.Cookie = cookie; }
@@ -354,6 +386,27 @@
             show('statusMsg', 'Sync started…', true);
             setTimeout(load, 1000);
         }).catch(function (e) { show('statusMsg', e.message, false); });
+    });
+
+    $('watchlistEnabled').addEventListener('change', function () {
+        api('POST', '/ImdbSync/Me', { WatchlistEnabled: $('watchlistEnabled').checked }).then(function (st) {
+            render(st);
+            if (st.WatchlistEnabled) { setTimeout(load, 1500); }
+        }).catch(function (e) { show('wlMsg', e.message, false); });
+    });
+
+    $('wlSyncBtn').addEventListener('click', function () {
+        $('wlSyncBtn').disabled = true;
+        api('POST', '/ImdbSync/Me/Watchlist/Sync').then(function () { setTimeout(load, 1000); })
+            .catch(function (e) { show('wlMsg', e.message, false); });
+    });
+
+    $('wlResetBtn').addEventListener('click', function () {
+        if (!confirm('Merge your IMDb watchlist and your playlist again on the next sync? Nothing is removed.')) { return; }
+        api('POST', '/ImdbSync/Me/Watchlist/Reset').then(function (st) {
+            render(st);
+            return api('POST', '/ImdbSync/Me/Watchlist/Sync');
+        }).then(function () { setTimeout(load, 1000); }).catch(function (e) { show('wlMsg', e.message, false); });
     });
 
     $('resetBtn').addEventListener('click', function () {

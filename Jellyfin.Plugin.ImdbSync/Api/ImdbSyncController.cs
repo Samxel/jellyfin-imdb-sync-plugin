@@ -30,6 +30,7 @@ public class ImdbSyncController : ControllerBase
 {
     private readonly UserSettingsStore _store;
     private readonly ImdbSyncService _syncService;
+    private readonly WatchlistSyncService _watchlistService;
     private readonly ImdbClient _imdbClient;
     private readonly IUserManager _userManager;
     private readonly IAuthorizationContext _authContext;
@@ -41,6 +42,7 @@ public class ImdbSyncController : ControllerBase
     /// </summary>
     /// <param name="store">The settings store.</param>
     /// <param name="syncService">The sync service.</param>
+    /// <param name="watchlistService">The watchlist sync service.</param>
     /// <param name="imdbClient">The IMDb client.</param>
     /// <param name="userManager">The user manager.</param>
     /// <param name="authContext">The authorization context.</param>
@@ -49,6 +51,7 @@ public class ImdbSyncController : ControllerBase
     public ImdbSyncController(
         UserSettingsStore store,
         ImdbSyncService syncService,
+        WatchlistSyncService watchlistService,
         ImdbClient imdbClient,
         IUserManager userManager,
         IAuthorizationContext authContext,
@@ -57,6 +60,7 @@ public class ImdbSyncController : ControllerBase
     {
         _store = store;
         _syncService = syncService;
+        _watchlistService = watchlistService;
         _imdbClient = imdbClient;
         _userManager = userManager;
         _authContext = authContext;
@@ -130,13 +134,29 @@ public class ImdbSyncController : ControllerBase
             return BadRequest("No IMDb token found. Paste the whole cookie (it must contain at-main=Atza|... or at-main=Atna|...) or just the at-main value.");
         }
 
-        _store.Update(userId.Value, s =>
+        var before = _store.Get(userId.Value);
+        var after = _store.Update(userId.Value, s =>
         {
             if (!string.IsNullOrWhiteSpace(update.Cookie))
             {
+                // A new cookie may belong to another IMDb account: merge again instead of mirroring removals.
+                if (!string.Equals(s.Cookie, update.Cookie.Trim(), StringComparison.Ordinal))
+                {
+                    s.WatchlistBaselineImdb = null;
+                    s.WatchlistBaselineJellyfin = null;
+                }
+
                 s.Cookie = update.Cookie.Trim();
                 s.CookieExpired = false;
                 s.LastError = null;
+            }
+
+            s.WatchlistEnabled = update.WatchlistEnabled ?? s.WatchlistEnabled;
+            if (!s.WatchlistEnabled)
+            {
+                // While disabled, changes are not tracked; start with a merge when enabled again.
+                s.WatchlistBaselineImdb = null;
+                s.WatchlistBaselineJellyfin = null;
             }
 
             s.SessionId = update.SessionId?.Trim() ?? s.SessionId;
@@ -144,6 +164,11 @@ public class ImdbSyncController : ControllerBase
             s.SyncMovies = update.SyncMovies ?? s.SyncMovies;
             s.SyncEpisodes = update.SyncEpisodes ?? s.SyncEpisodes;
         });
+
+        if (after.WatchlistEnabled && !before.WatchlistEnabled)
+        {
+            StartWatchlistSync(userId.Value);
+        }
 
         return ToDto(userId.Value);
     }
@@ -288,6 +313,82 @@ public class ImdbSyncController : ControllerBase
     }
 
     /// <summary>
+    /// Starts a watchlist sync of the current user in the background.
+    /// </summary>
+    /// <returns>Accepted.</returns>
+    [HttpPost("Me/Watchlist/Sync")]
+    public async Task<ActionResult> SyncMyWatchlist()
+    {
+        var userId = await GetUserIdAsync().ConfigureAwait(false);
+        if (userId is null)
+        {
+            return BadRequest();
+        }
+
+        if (_watchlistService.IsSyncing(userId.Value))
+        {
+            return Conflict("A watchlist sync is already running.");
+        }
+
+        StartWatchlistSync(userId.Value);
+        return Accepted();
+    }
+
+    /// <summary>
+    /// Forgets the watchlist state of the last sync: the next sync merges both sides without removing anything.
+    /// </summary>
+    /// <returns>The new status.</returns>
+    [HttpPost("Me/Watchlist/Reset")]
+    public async Task<ActionResult<UserStatusDto>> ResetMyWatchlist()
+    {
+        var userId = await GetUserIdAsync().ConfigureAwait(false);
+        if (userId is null)
+        {
+            return BadRequest();
+        }
+
+        _watchlistService.ResetBaseline(userId.Value);
+        return ToDto(userId.Value);
+    }
+
+    /// <summary>
+    /// Admin: runs the watchlist sync of a user now (optionally enabling it) and returns the result.
+    /// </summary>
+    /// <param name="userId">The user id.</param>
+    /// <param name="enable">Enable the watchlist sync for the user first.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The summary.</returns>
+    [HttpPost("Users/{userId}/Watchlist/Sync")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public async Task<ActionResult<string>> AdminSyncWatchlist([FromRoute] Guid userId, [FromQuery] bool enable, CancellationToken cancellationToken)
+    {
+        if (_userManager.GetUserById(userId) is null)
+        {
+            return NotFound();
+        }
+
+        if (enable)
+        {
+            _store.Update(userId, s => s.WatchlistEnabled = true);
+        }
+
+        return await _watchlistService.SyncUserAsync(userId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Admin: gets the activity log of a user, newest first.
+    /// </summary>
+    /// <param name="userId">The user id.</param>
+    /// <param name="limit">The maximum number of entries.</param>
+    /// <returns>The log entries.</returns>
+    [HttpGet("Users/{userId}/Log")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public ActionResult<IEnumerable<SyncLogEntry>> AdminGetLog([FromRoute] Guid userId, [FromQuery] int limit = 100)
+    {
+        return _store.Get(userId).Log.AsEnumerable().Reverse().Take(Math.Clamp(limit, 1, ImdbUserSettings.MaxLogEntries)).ToList();
+    }
+
+    /// <summary>
     /// Forgets which titles were already pushed, so the next sync sends everything again.
     /// </summary>
     /// <returns>The new status.</returns>
@@ -320,6 +421,27 @@ public class ImdbSyncController : ControllerBase
             .Select(u => ToDto(u.Id, countPending: false))
             .OrderBy(d => d.UserName, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private void StartWatchlistSync(Guid userId)
+    {
+        var stopping = _lifetime.ApplicationStopping;
+        _ = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    await _watchlistService.SyncUserAsync(userId, stopping).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Watchlist sync for user {UserId} failed", userId);
+                }
+            },
+            stopping);
     }
 
     private async Task<Guid?> GetUserIdAsync()
@@ -357,7 +479,13 @@ public class ImdbSyncController : ControllerBase
             LastSyncUtc = s.LastSyncUtc,
             LastSuccessUtc = s.LastSuccessUtc,
             LastSyncedTitle = s.LastSyncedTitle,
-            LastError = s.LastError
+            LastError = s.LastError,
+            WatchlistEnabled = s.WatchlistEnabled,
+            WatchlistSyncing = _watchlistService.IsSyncing(userId),
+            WatchlistLastSyncUtc = s.WatchlistLastSyncUtc,
+            WatchlistImdbCount = s.WatchlistImdbCount,
+            WatchlistPlaylistCount = s.WatchlistPlaylistCount,
+            WatchlistError = s.WatchlistError
         };
     }
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
@@ -27,6 +28,18 @@ public class ImdbClient
     private const string WatchlistCountQuery =
         "query UserPredefinedListQuery { predefinedList(classType: WATCH_LIST) { items(first: 1) { "
         + "edges { node { item { __typename ... on Title { id } } } } pageInfo { hasNextPage } } } }";
+
+    private const string WatchlistReadQuery =
+        "query ImdbSyncWatchlist($after: ID) { predefinedList(classType: WATCH_LIST) { items(first: 100, after: $after) { "
+        + "edges { node { item { __typename ... on Title { id titleText { text } } } } } pageInfo { endCursor hasNextPage } } } }";
+
+    private const string WatchlistAddMutation =
+        "mutation ImdbSyncWatchlistAdd($input: AddItemToPredefinedListInput!) { addItemToPredefinedList(input: $input) { listId } }";
+
+    private const string WatchlistRemoveMutation =
+        "mutation ImdbSyncWatchlistRemove($input: RemoveElementFromPredefinedListInput!) { removeElementFromPredefinedList(input: $input) { listId } }";
+
+    private const int MaxWatchlistPages = 100;
 
     private static readonly Uri _graphQlUri = new("https://api.graphql.imdb.com/");
 
@@ -81,6 +94,102 @@ public class ImdbClient
         {
             throw new ImdbAuthException("IMDb returned no watchlist - the cookie is probably not logged in.");
         }
+    }
+
+    /// <summary>
+    /// Reads the user's IMDb watchlist.
+    /// </summary>
+    /// <param name="credentials">The user's credentials.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The titles on the watchlist, keyed by IMDb id, with their names.</returns>
+    public async Task<Dictionary<string, string>> GetWatchlistAsync(ImdbCredentials credentials, CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        string? after = null;
+        for (var page = 0; page < MaxWatchlistPages; page++)
+        {
+            var variables = new JsonObject();
+            if (after is not null)
+            {
+                variables["after"] = after;
+            }
+
+            var payload = new JsonObject
+            {
+                ["operationName"] = "ImdbSyncWatchlist",
+                ["variables"] = variables,
+                ["query"] = WatchlistReadQuery
+            };
+
+            var data = await PostAsync(credentials, payload, cancellationToken).ConfigureAwait(false);
+            var items = data?["predefinedList"]?["items"]
+                ?? throw new ImdbAuthException("IMDb returned no watchlist - the cookie is probably not logged in.");
+            foreach (var edge in items["edges"]?.AsArray() ?? [])
+            {
+                var item = edge?["node"]?["item"];
+                var id = item?["id"]?.GetValue<string>();
+                if (item?["__typename"]?.GetValue<string>() == "Title" && id is not null)
+                {
+                    result[id] = item["titleText"]?["text"]?.GetValue<string>() ?? id;
+                }
+            }
+
+            var pageInfo = items["pageInfo"];
+            if (pageInfo?["hasNextPage"]?.GetValue<bool>() != true)
+            {
+                return result;
+            }
+
+            after = pageInfo["endCursor"]?.GetValue<string>();
+        }
+
+        throw new HttpRequestException("IMDb watchlist has too many pages.");
+    }
+
+    /// <summary>
+    /// Adds a title to the user's IMDb watchlist.
+    /// </summary>
+    /// <param name="credentials">The user's credentials.</param>
+    /// <param name="imdbId">The IMDb id.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>A task.</returns>
+    public Task AddToWatchlistAsync(ImdbCredentials credentials, string imdbId, CancellationToken cancellationToken)
+    {
+        var payload = new JsonObject
+        {
+            ["operationName"] = "ImdbSyncWatchlistAdd",
+            ["variables"] = new JsonObject
+            {
+                ["input"] = new JsonObject
+                {
+                    ["classType"] = "WATCH_LIST",
+                    ["item"] = new JsonObject { ["itemElementId"] = imdbId }
+                }
+            },
+            ["query"] = WatchlistAddMutation
+        };
+        return PostAsync(credentials, payload, cancellationToken);
+    }
+
+    /// <summary>
+    /// Removes a title from the user's IMDb watchlist.
+    /// </summary>
+    /// <param name="credentials">The user's credentials.</param>
+    /// <param name="imdbId">The IMDb id.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>A task.</returns>
+    public Task RemoveFromWatchlistAsync(ImdbCredentials credentials, string imdbId, CancellationToken cancellationToken)
+    {
+        var payload = new JsonObject
+        {
+            ["operationName"] = "ImdbSyncWatchlistRemove",
+            ["variables"] = new JsonObject
+            {
+                ["input"] = new JsonObject { ["classType"] = "WATCH_LIST", ["itemElementId"] = imdbId }
+            },
+            ["query"] = WatchlistRemoveMutation
+        };
+        return PostAsync(credentials, payload, cancellationToken);
     }
 
     private async Task<JsonNode?> PostAsync(ImdbCredentials credentials, JsonObject payload, CancellationToken cancellationToken)

@@ -74,6 +74,36 @@ public class UserStatusDto
     public bool IsSyncing { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether the watchlist sync is enabled.
+    /// </summary>
+    public bool WatchlistEnabled { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether a watchlist sync is running.
+    /// </summary>
+    public bool WatchlistSyncing { get; set; }
+
+    /// <summary>
+    /// Gets or sets the time of the last watchlist sync.
+    /// </summary>
+    public DateTime? WatchlistLastSyncUtc { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of titles on the IMDb watchlist.
+    /// </summary>
+    public int WatchlistImdbCount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of movies in the playlist.
+    /// </summary>
+    public int WatchlistPlaylistCount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the last watchlist problem, if any.
+    /// </summary>
+    public string? WatchlistError { get; set; }
+
+    /// <summary>
     /// Gets or sets the progress of a running bulk sync.
     /// </summary>
     public SyncProgress? Progress { get; set; }

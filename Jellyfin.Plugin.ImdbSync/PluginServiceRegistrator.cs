@@ -31,7 +31,9 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<UserSettingsStore>();
         serviceCollection.AddSingleton<ImdbClient>();
         serviceCollection.AddSingleton<ImdbSyncService>();
+        serviceCollection.AddSingleton<WatchlistSyncService>();
         serviceCollection.AddHostedService<PlaybackListener>();
+        serviceCollection.AddHostedService<PlaylistListener>();
         serviceCollection.AddScoped<IEventConsumer<UserDeletedEventArgs>, UserDeletedConsumer>();
     }
 }

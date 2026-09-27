@@ -62,6 +62,48 @@ public class ImdbUserSettings
 #pragma warning restore CA2227
 
     /// <summary>
+    /// Gets or sets a value indicating whether the IMDb watchlist is synced with a Jellyfin playlist.
+    /// </summary>
+    public bool WatchlistEnabled { get; set; }
+
+    /// <summary>
+    /// Gets or sets the id of the user's "Watchlist" playlist.
+    /// </summary>
+    public Guid? WatchlistPlaylistId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the IMDb ids on the IMDb watchlist after the last sync, or <c>null</c> before the first sync.
+    /// </summary>
+#pragma warning disable CA2227 // Setter needed for JSON deserialization
+    public HashSet<string>? WatchlistBaselineImdb { get; set; }
+
+    /// <summary>
+    /// Gets or sets the IMDb ids in the Jellyfin playlist after the last sync, or <c>null</c> before the first sync.
+    /// </summary>
+    public HashSet<string>? WatchlistBaselineJellyfin { get; set; }
+#pragma warning restore CA2227
+
+    /// <summary>
+    /// Gets or sets the time of the last watchlist sync.
+    /// </summary>
+    public DateTime? WatchlistLastSyncUtc { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of titles on the IMDb watchlist at the last sync.
+    /// </summary>
+    public int WatchlistImdbCount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of movies in the playlist at the last sync.
+    /// </summary>
+    public int WatchlistPlaylistCount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the last watchlist sync error, if any.
+    /// </summary>
+    public string? WatchlistError { get; set; }
+
+    /// <summary>
     /// Gets or sets the time of the last completed sync run.
     /// </summary>
     public DateTime? LastSyncUtc { get; set; }
