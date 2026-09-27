@@ -3,6 +3,14 @@
     "guid": "1f3069c0-4bfe-4b07-a586-a8b6d945d3be",
     "versions": [
       {
+        "version": "1.3.0.0",
+        "changelog": "Mark a whole series as watched on IMDb once it has ended, is complete in Jellyfin (no missing aired episodes) and every episode was watched.",
+        "targetAbi": "12.1.0.0",
+        "sourceUrl": "https://github.com/Samxel/jellyfin-imdb-sync-plugin/releases/download/v1.3.0/imdb-sync_1.3.0.0.zip",
+        "checksum": "09d8a15c85f57585e03b53f49e59e8c1",
+        "timestamp": "2026-09-27T10:55:54Z"
+      },
+      {
         "version": "1.2.1.0",
         "changelog": "Watchlist sync also runs at server startup (an interval task that never ran would otherwise only start one hour after startup).",
         "targetAbi": "12.1.0.0",
