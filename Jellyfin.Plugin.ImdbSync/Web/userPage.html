@@ -105,6 +105,7 @@
                 <button class="primary" id="wlSyncBtn">Sync watchlist now</button>
                 <button id="wlResetBtn">Re-merge</button>
             </div>
+            <p class="hint hidden" id="wlSeerr">Titles on your IMDb watchlist that are not in Jellyfin yet are requested automatically on Seerr (with your Seerr account).</p>
             <p class="hint">Changes to the playlist are synced within seconds, changes on IMDb every 15 minutes. "Re-merge" combines both sides again without removing anything (use it if the safety stop held back removals).</p>
         </section>
 
@@ -294,6 +295,7 @@
         show('wlMsg', st.WatchlistEnabled && st.WatchlistError ? st.WatchlistError : '', false);
         $('wlSyncBtn').disabled = !st.WatchlistEnabled || st.WatchlistSyncing || !st.HasCookie || st.CookieExpired;
         $('wlResetBtn').disabled = !st.WatchlistEnabled;
+        $('wlSeerr').classList.toggle('hidden', !(st.WatchlistEnabled && st.SeerrRequests));
 
         var p = st.Progress;
         $('progressBox').classList.toggle('hidden', !p);

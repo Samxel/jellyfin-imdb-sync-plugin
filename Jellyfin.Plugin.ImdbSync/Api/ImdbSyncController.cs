@@ -7,6 +7,7 @@ using System.Net.Mime;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.ImdbSync.Imdb;
+using Jellyfin.Plugin.ImdbSync.Seerr;
 using Jellyfin.Plugin.ImdbSync.Storage;
 using Jellyfin.Plugin.ImdbSync.Sync;
 using MediaBrowser.Common.Api;
@@ -32,6 +33,7 @@ public class ImdbSyncController : ControllerBase
     private readonly ImdbSyncService _syncService;
     private readonly WatchlistSyncService _watchlistService;
     private readonly ImdbClient _imdbClient;
+    private readonly SeerrClient _seerrClient;
     private readonly IUserManager _userManager;
     private readonly IAuthorizationContext _authContext;
     private readonly IHostApplicationLifetime _lifetime;
@@ -44,6 +46,7 @@ public class ImdbSyncController : ControllerBase
     /// <param name="syncService">The sync service.</param>
     /// <param name="watchlistService">The watchlist sync service.</param>
     /// <param name="imdbClient">The IMDb client.</param>
+    /// <param name="seerrClient">The Seerr client.</param>
     /// <param name="userManager">The user manager.</param>
     /// <param name="authContext">The authorization context.</param>
     /// <param name="lifetime">The application lifetime.</param>
@@ -53,6 +56,7 @@ public class ImdbSyncController : ControllerBase
         ImdbSyncService syncService,
         WatchlistSyncService watchlistService,
         ImdbClient imdbClient,
+        SeerrClient seerrClient,
         IUserManager userManager,
         IAuthorizationContext authContext,
         IHostApplicationLifetime lifetime,
@@ -62,6 +66,7 @@ public class ImdbSyncController : ControllerBase
         _syncService = syncService;
         _watchlistService = watchlistService;
         _imdbClient = imdbClient;
+        _seerrClient = seerrClient;
         _userManager = userManager;
         _authContext = authContext;
         _lifetime = lifetime;
@@ -376,6 +381,33 @@ public class ImdbSyncController : ControllerBase
     }
 
     /// <summary>
+    /// Admin: checks the Seerr connection with the saved settings.
+    /// </summary>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>A summary.</returns>
+    [HttpPost("Seerr/Test")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public async Task<ActionResult<string>> TestSeerr(CancellationToken cancellationToken)
+    {
+        if (!SeerrClient.IsConfigured)
+        {
+            return BadRequest("Enter the Seerr URL and API key and save first.");
+        }
+
+        try
+        {
+            var version = await _seerrClient.GetVersionAsync(cancellationToken).ConfigureAwait(false);
+            var map = await _seerrClient.GetUserMapAsync(cancellationToken).ConfigureAwait(false);
+            var linked = _userManager.GetUsers().Count(u => map.ContainsKey(u.Id));
+            return Ok($"Connected to Seerr {version}. {linked} Jellyfin user(s) are linked to a Seerr account.");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or UriFormatException or TaskCanceledException)
+        {
+            return StatusCode(StatusCodes.Status502BadGateway, ex.Message);
+        }
+    }
+
+    /// <summary>
     /// Admin: gets the activity log of a user, newest first.
     /// </summary>
     /// <param name="userId">The user id.</param>
@@ -485,7 +517,8 @@ public class ImdbSyncController : ControllerBase
             WatchlistLastSyncUtc = s.WatchlistLastSyncUtc,
             WatchlistImdbCount = s.WatchlistImdbCount,
             WatchlistPlaylistCount = s.WatchlistPlaylistCount,
-            WatchlistError = s.WatchlistError
+            WatchlistError = s.WatchlistError,
+            SeerrRequests = SeerrClient.RequestsEnabled
         };
     }
 }

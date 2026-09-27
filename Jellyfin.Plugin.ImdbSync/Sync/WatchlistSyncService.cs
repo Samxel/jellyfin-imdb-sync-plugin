@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.ImdbSync.Imdb;
+using Jellyfin.Plugin.ImdbSync.Seerr;
 using Jellyfin.Plugin.ImdbSync.Storage;
 using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
@@ -39,6 +40,7 @@ public class WatchlistSyncService
     private readonly ILibraryManager _libraryManager;
     private readonly IUserManager _userManager;
     private readonly IPlaylistManager _playlistManager;
+    private readonly SeerrClient _seerrClient;
     private readonly ILogger<WatchlistSyncService> _logger;
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _locks = new();
     private readonly ConcurrentDictionary<Guid, DateTime> _ownChangeUntil = new();
@@ -51,6 +53,7 @@ public class WatchlistSyncService
     /// <param name="libraryManager">The library manager.</param>
     /// <param name="userManager">The user manager.</param>
     /// <param name="playlistManager">The playlist manager.</param>
+    /// <param name="seerrClient">The Seerr client.</param>
     /// <param name="logger">The logger.</param>
     public WatchlistSyncService(
         UserSettingsStore store,
@@ -58,6 +61,7 @@ public class WatchlistSyncService
         ILibraryManager libraryManager,
         IUserManager userManager,
         IPlaylistManager playlistManager,
+        SeerrClient seerrClient,
         ILogger<WatchlistSyncService> logger)
     {
         _store = store;
@@ -65,6 +69,7 @@ public class WatchlistSyncService
         _libraryManager = libraryManager;
         _userManager = userManager;
         _playlistManager = playlistManager;
+        _seerrClient = seerrClient;
         _logger = logger;
     }
 
@@ -318,6 +323,15 @@ public class WatchlistSyncService
 
         log.AddRange(plan.NotInLibrary.Select(id => Entry(SyncLogStatus.Info, Name(id), id, "On the IMDb watchlist, but not in your Jellyfin library.")));
 
+        if (SeerrClient.RequestsEnabled)
+        {
+            var missing = imdbIds.Where(id => !library.ContainsKey(id) && !settings.SeerrHandledIds.Contains(id)).ToList();
+            if (missing.Count > 0)
+            {
+                await RequestOnSeerrAsync(user, missing, Name, log, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
         string? warning = null;
         if (plan.HeldBackFromJellyfin.Count > 0 || plan.HeldBackFromImdb.Count > 0)
         {
@@ -349,6 +363,61 @@ public class WatchlistSyncService
 
         _logger.LogInformation("IMDb watchlist sync for {User}: {Summary}", user.Username, summary);
         return summary;
+    }
+
+    private async Task RequestOnSeerrAsync(User user, List<string> missing, Func<string, string> name, List<SyncLogEntry> log, CancellationToken cancellationToken)
+    {
+        const int MaxPerSync = 25;
+        Dictionary<Guid, int> users;
+        try
+        {
+            users = await _seerrClient.GetUserMapAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException)
+        {
+            log.Add(Entry(SyncLogStatus.Error, "Seerr not reachable", null, ex.Message + " Retried on the next sync."));
+            return;
+        }
+
+        if (!users.TryGetValue(user.Id, out var seerrUserId))
+        {
+            log.Add(Entry(SyncLogStatus.Error, "No Seerr account", null, "Your Jellyfin account is not linked to a Seerr user, so missing titles cannot be requested."));
+            return;
+        }
+
+        var handled = new List<string>();
+        foreach (var id in missing.Take(MaxPerSync))
+        {
+            try
+            {
+                var title = await _seerrClient.FindByImdbIdAsync(id, cancellationToken).ConfigureAwait(false);
+                if (title is null)
+                {
+                    log.Add(Entry(SyncLogStatus.Info, name(id), id, "Not in your library and not found on Seerr."));
+                }
+                else if (title.IsRequestedOrAvailable)
+                {
+                    log.Add(Entry(SyncLogStatus.Info, title.Title, id, "Not in your library; already requested or available on Seerr."));
+                }
+                else
+                {
+                    await _seerrClient.RequestAsync(title, seerrUserId, cancellationToken).ConfigureAwait(false);
+                    log.Add(Entry(SyncLogStatus.Synced, title.Title, id, title.MediaType == "tv" ? "Not in your library → series requested on Seerr (all seasons)." : "Not in your library → requested on Seerr."));
+                }
+
+                handled.Add(id);
+            }
+            catch (HttpRequestException ex)
+            {
+                log.Add(Entry(SyncLogStatus.Error, name(id), id, "Seerr request failed: " + ex.Message + " Retried on the next sync."));
+                _logger.LogWarning("Seerr request for {ImdbId} failed: {Message}", id, ex.Message);
+            }
+        }
+
+        if (handled.Count > 0)
+        {
+            _store.Update(user.Id, s => s.SeerrHandledIds.UnionWith(handled));
+        }
     }
 
     private async Task<bool> TryImdbAsync(Func<Task> action, List<SyncLogEntry> log, string id, string name, string successMessage, CancellationToken cancellationToken)

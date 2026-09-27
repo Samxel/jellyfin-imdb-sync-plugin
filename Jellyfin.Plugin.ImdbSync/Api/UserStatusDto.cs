@@ -104,6 +104,11 @@ public class UserStatusDto
     public string? WatchlistError { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether missing watchlist titles are requested on Seerr (server setting).
+    /// </summary>
+    public bool SeerrRequests { get; set; }
+
+    /// <summary>
     /// Gets or sets the progress of a running bulk sync.
     /// </summary>
     public SyncProgress? Progress { get; set; }

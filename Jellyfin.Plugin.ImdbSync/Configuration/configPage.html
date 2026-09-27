@@ -33,6 +33,29 @@
                         <input id="RequestDelayMs" type="number" is="emby-input" min="0" max="10000" />
                         <div class="fieldDescription">Used for bulk syncs so IMDb does not rate-limit the account.</div>
                     </div>
+                    <h3 style="margin-top:1.5em">Seerr</h3>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="SeerrRequestsEnabled" type="checkbox" is="emby-checkbox" />
+                            <span>Request watchlist titles that are missing in Jellyfin on Seerr</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">
+                            For every user with watchlist sync. Requests are made with the user's own Seerr account (linked via Jellyfin), so Seerr's permissions and auto-approval apply.
+                        </div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="SeerrUrl">Seerr URL</label>
+                        <input id="SeerrUrl" type="text" is="emby-input" placeholder="https://seerr.example.com" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="SeerrApiKey">Seerr API key</label>
+                        <input id="SeerrApiKey" type="password" is="emby-input" autocomplete="off" />
+                        <div class="fieldDescription">Seerr → Settings → General → API Key.</div>
+                    </div>
+                    <div>
+                        <button is="emby-button" type="button" id="SeerrTestBtn" class="raised emby-button"><span>Test Seerr connection</span></button>
+                        <div id="SeerrTestResult" class="fieldDescription"></div>
+                    </div>
                     <div>
                         <button is="emby-button" type="submit" class="raised button-submit block emby-button">
                             <span>Save</span>
@@ -91,9 +114,23 @@
                     ApiClient.getPluginConfiguration(pluginId).then(function (config) {
                         page.querySelector('#EnableRealtimeSync').checked = config.EnableRealtimeSync;
                         page.querySelector('#RequestDelayMs').value = config.RequestDelayMs;
+                        page.querySelector('#SeerrRequestsEnabled').checked = config.SeerrRequestsEnabled;
+                        page.querySelector('#SeerrUrl').value = config.SeerrUrl || '';
+                        page.querySelector('#SeerrApiKey').value = config.SeerrApiKey || '';
                         Dashboard.hideLoadingMsg();
                     });
                     loadUsers();
+                });
+
+                page.querySelector('#SeerrTestBtn').addEventListener('click', function () {
+                    var out = page.querySelector('#SeerrTestResult');
+                    out.textContent = 'Testing… (save first if you changed the settings)';
+                    ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('ImdbSync/Seerr/Test'), dataType: 'text' })
+                        .then(function (r) { out.textContent = r; })
+                        .catch(function (e) {
+                            if (e && e.text) { e.text().then(function (t) { out.textContent = 'Failed: ' + t; }); }
+                            else { out.textContent = 'Failed.'; }
+                        });
                 });
 
                 page.querySelector('#ImdbSyncConfigForm').addEventListener('submit', function (e) {
@@ -101,6 +138,9 @@
                     ApiClient.getPluginConfiguration(pluginId).then(function (config) {
                         config.EnableRealtimeSync = page.querySelector('#EnableRealtimeSync').checked;
                         config.RequestDelayMs = parseInt(page.querySelector('#RequestDelayMs').value, 10) || 0;
+                        config.SeerrRequestsEnabled = page.querySelector('#SeerrRequestsEnabled').checked;
+                        config.SeerrUrl = page.querySelector('#SeerrUrl').value.trim();
+                        config.SeerrApiKey = page.querySelector('#SeerrApiKey').value.trim();
                         ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
                             Dashboard.processPluginConfigurationUpdateResult(result);
                         });

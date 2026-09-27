@@ -84,6 +84,13 @@ public class ImdbUserSettings
 #pragma warning restore CA2227
 
     /// <summary>
+    /// Gets or sets the IMDb ids already handled on Seerr (requested, already available, or unknown to Seerr).
+    /// </summary>
+#pragma warning disable CA2227 // Setter needed for JSON deserialization
+    public HashSet<string> SeerrHandledIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+#pragma warning restore CA2227
+
+    /// <summary>
     /// Gets or sets the time of the last watchlist sync.
     /// </summary>
     public DateTime? WatchlistLastSyncUtc { get; set; }

@@ -121,6 +121,7 @@ public class UserSettingsStore
         settings.SyncedIds = new HashSet<string>(settings.SyncedIds ?? [], StringComparer.OrdinalIgnoreCase);
         settings.FailedIds = new HashSet<string>(settings.FailedIds ?? [], StringComparer.OrdinalIgnoreCase);
         settings.Log ??= [];
+        settings.SeerrHandledIds = new HashSet<string>(settings.SeerrHandledIds ?? [], StringComparer.OrdinalIgnoreCase);
         if (settings.WatchlistBaselineImdb is not null)
         {
             settings.WatchlistBaselineImdb = new HashSet<string>(settings.WatchlistBaselineImdb, StringComparer.OrdinalIgnoreCase);
