@@ -407,6 +407,12 @@ public class WatchlistSyncService
 
                 handled.Add(id);
             }
+            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict || ex.Message.Contains("UNIQUE constraint", StringComparison.OrdinalIgnoreCase))
+            {
+                // Seerr already has a request or media entry for this title (a 409, or a duplicate-key error from its database).
+                log.Add(Entry(SyncLogStatus.Info, name(id), id, "Not in your library; Seerr already has an entry for it (" + ex.Message + ")."));
+                handled.Add(id);
+            }
             catch (HttpRequestException ex)
             {
                 log.Add(Entry(SyncLogStatus.Error, name(id), id, "Seerr request failed: " + ex.Message + " Retried on the next sync."));
