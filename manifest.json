@@ -3,6 +3,14 @@
     "guid": "1f3069c0-4bfe-4b07-a586-a8b6d945d3be",
     "versions": [
       {
+        "version": "1.2.1.0",
+        "changelog": "Watchlist sync also runs at server startup (an interval task that never ran would otherwise only start one hour after startup).",
+        "targetAbi": "12.1.0.0",
+        "sourceUrl": "https://github.com/Samxel/jellyfin-imdb-sync-plugin/releases/download/v1.2.1/imdb-sync_1.2.1.0.zip",
+        "checksum": "8f1f542a6b3d67925bc2d15c0f9782fe",
+        "timestamp": "2026-09-27T09:06:41Z"
+      },
+      {
         "version": "1.2.0.0",
         "changelog": "Two-way sync between each user's IMDb watchlist and a private Jellyfin playlist \"Watchlist\" (movies, and series as their first episode).",
         "targetAbi": "12.1.0.0",
