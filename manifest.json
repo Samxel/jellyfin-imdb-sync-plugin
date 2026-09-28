@@ -3,6 +3,14 @@
     "guid": "1f3069c0-4bfe-4b07-a586-a8b6d945d3be",
     "versions": [
       {
+        "version": "1.5.0.0",
+        "changelog": "Watchlist playlists get an IMDb Watchlist poster and thumb, and are pinned first among the playlists (managed block in the custom CSS).",
+        "targetAbi": "12.1.0.0",
+        "sourceUrl": "https://github.com/Samxel/jellyfin-imdb-sync-plugin/releases/download/v1.5.0/imdb-sync_1.5.0.0.zip",
+        "checksum": "c54b28e0c99cdf0e0df1b4d2833b70ec",
+        "timestamp": "2026-09-28T08:48:26Z"
+      },
+      {
         "version": "1.4.1.0",
         "changelog": "Seerr: treat \"already exists\" answers (HTTP 409 or a duplicate-key error) as handled instead of retrying every sync.",
         "targetAbi": "12.1.0.0",
