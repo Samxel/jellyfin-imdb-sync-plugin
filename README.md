@@ -8,6 +8,7 @@ Syncs every Jellyfin user's watch history and watchlist with **their own IMDb ac
   - A series is marked as watched as a whole once it has ended, no aired episode is missing in Jellyfin, and every episode (specials excluded) has been watched.
 - **Watchlist ↔ playlist:** each user's IMDb watchlist is kept in sync with their own private Jellyfin playlist *Watchlist*, in both directions, including removals.
   - A series appears in the playlist as its first episode only, not every episode.
+  - The playlist has its own IMDb *Watchlist* poster and thumb and is shown first among the playlists (a managed block in Jellyfin's custom CSS).
   - A safety stop holds back mass removals.
   - Optional (admin): watchlist titles that are not in Jellyfin yet are requested on **Seerr**, with each user's own Seerr account.
 - **Per user:** each user connects their own IMDb account on a self-service page.

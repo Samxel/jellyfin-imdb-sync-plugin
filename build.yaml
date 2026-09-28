@@ -1,7 +1,7 @@
 ---
 name: "IMDb Sync"
 guid: "1f3069c0-4bfe-4b07-a586-a8b6d945d3be"
-version: "1.4.1.0"
+version: "1.5.0.0"
 targetAbi: "12.1.0.0"
 framework: "net10.0"
 overview: "Sync each user's Jellyfin watch history to their own IMDb account"
@@ -14,5 +14,5 @@ owner: "samxel"
 artifacts:
 - "Jellyfin.Plugin.ImdbSync.dll"
 changelog: >
-  Seerr: treat "already exists" answers (HTTP 409 or a duplicate-key error)
-  as handled instead of retrying every sync.
+  Watchlist playlists get an IMDb Watchlist poster and thumb, and are pinned
+  first among the playlists (managed block in the custom CSS).
