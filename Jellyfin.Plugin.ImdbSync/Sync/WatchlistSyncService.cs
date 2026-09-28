@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
@@ -41,6 +42,7 @@ public class WatchlistSyncService
     private readonly IUserManager _userManager;
     private readonly IPlaylistManager _playlistManager;
     private readonly SeerrClient _seerrClient;
+    private readonly WatchlistImages _images;
     private readonly ILogger<WatchlistSyncService> _logger;
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _locks = new();
     private readonly ConcurrentDictionary<Guid, DateTime> _ownChangeUntil = new();
@@ -54,6 +56,7 @@ public class WatchlistSyncService
     /// <param name="userManager">The user manager.</param>
     /// <param name="playlistManager">The playlist manager.</param>
     /// <param name="seerrClient">The Seerr client.</param>
+    /// <param name="images">The playlist images.</param>
     /// <param name="logger">The logger.</param>
     public WatchlistSyncService(
         UserSettingsStore store,
@@ -62,6 +65,7 @@ public class WatchlistSyncService
         IUserManager userManager,
         IPlaylistManager playlistManager,
         SeerrClient seerrClient,
+        WatchlistImages images,
         ILogger<WatchlistSyncService> logger)
     {
         _store = store;
@@ -70,6 +74,7 @@ public class WatchlistSyncService
         _userManager = userManager;
         _playlistManager = playlistManager;
         _seerrClient = seerrClient;
+        _images = images;
         _logger = logger;
     }
 
@@ -196,6 +201,16 @@ public class WatchlistSyncService
     {
         var settings = _store.Get(user.Id);
         var (playlist, isNew) = await GetOrCreatePlaylistAsync(user, settings).ConfigureAwait(false);
+
+        try
+        {
+            MarkOwnChange(user.Id);
+            await _images.EnsureAsync(playlist, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            _logger.LogWarning(ex, "Could not set the images of the Watchlist playlist of {User}", user.Username);
+        }
 
         // Movies and series the user can see, by IMDb id.
         var library = new Dictionary<string, BaseItem>(StringComparer.OrdinalIgnoreCase);
