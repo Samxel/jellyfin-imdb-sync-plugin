@@ -35,6 +35,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ImdbClient>();
         serviceCollection.AddSingleton<ImdbSyncService>();
         serviceCollection.AddSingleton<WatchlistImages>();
+        serviceCollection.AddSingleton<WatchlistPinCss>();
         serviceCollection.AddSingleton<WatchlistSyncService>();
         serviceCollection.AddHostedService<PlaybackListener>();
         serviceCollection.AddHostedService<PlaylistListener>();

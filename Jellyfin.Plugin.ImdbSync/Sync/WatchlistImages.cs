@@ -10,23 +10,17 @@ using MediaBrowser.Model.Entities;
 namespace Jellyfin.Plugin.ImdbSync.Sync;
 
 /// <summary>
-/// Gives every "Watchlist" playlist the IMDb watchlist poster and thumb and pins it to the top of the playlist list.
+/// Gives every "Watchlist" playlist the IMDb watchlist poster and thumb.
 /// The files live in the plugin's data folder, outside the item's metadata folder, so Jellyfin's
 /// automatic playlist collages never replace them.
 /// </summary>
 public class WatchlistImages
 {
-    // Sorts before every other name (Jellyfin's default playlist sort) while the name stays "Watchlist".
-    private const string PinnedSortName = "!!!!!watchlist";
-
     private static readonly (ImageType Type, string Resource, string File, int Width, int Height)[] _images =
     [
         (ImageType.Primary, "Jellyfin.Plugin.ImdbSync.Web.watchlist-poster.png", "watchlist-poster.png", 333, 500),
         (ImageType.Thumb, "Jellyfin.Plugin.ImdbSync.Web.watchlist-thumb.png", "watchlist-thumb.png", 960, 540)
     ];
-
-    // Newest "date added", so it is also first when sorting by date added (newest first).
-    private static readonly DateTime _pinnedDateCreated = new(2100, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
     private readonly string _directory;
     private readonly object _lock = new();
@@ -42,7 +36,7 @@ public class WatchlistImages
     }
 
     /// <summary>
-    /// Sets the poster and thumb of the playlist unless it already uses them, and pins it to the top.
+    /// Sets the poster and thumb of the playlist unless it already uses them.
     /// </summary>
     /// <param name="playlist">The playlist.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
@@ -73,25 +67,10 @@ public class WatchlistImages
             changed = true;
         }
 
-        var metadataChanged = false;
-        if (!string.Equals(playlist.ForcedSortName, PinnedSortName, StringComparison.Ordinal))
+        if (changed)
         {
-            playlist.ForcedSortName = PinnedSortName;
-            metadataChanged = true;
+            await playlist.UpdateToRepositoryAsync(ItemUpdateType.ImageUpdate, cancellationToken).ConfigureAwait(false);
         }
-
-        if (playlist.DateCreated != _pinnedDateCreated)
-        {
-            playlist.DateCreated = _pinnedDateCreated;
-            metadataChanged = true;
-        }
-
-        if (changed || metadataChanged)
-        {
-            await playlist.UpdateToRepositoryAsync(metadataChanged ? ItemUpdateType.MetadataEdit : ItemUpdateType.ImageUpdate, cancellationToken).ConfigureAwait(false);
-        }
-
-        changed |= metadataChanged;
 
         return changed;
     }

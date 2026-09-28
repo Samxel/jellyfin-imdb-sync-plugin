@@ -15,4 +15,4 @@ artifacts:
 - "Jellyfin.Plugin.ImdbSync.dll"
 changelog: >
   Watchlist playlists get an IMDb Watchlist poster and thumb, and are pinned
-  to the top of the playlists (sort by name and by date added).
+  first among the playlists (managed block in the custom CSS).
